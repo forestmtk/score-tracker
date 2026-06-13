@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<!-- iPhoneの「ホーム画面に追加」から全画面アプリとして起動するための設定 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0E1116">
+<title>Score Tracker</title>
+<style>
+  /* ============================================================
+     バスケ スコアトラッカー(GitHub Pages公開版)
+     Claude Artifact版(v4)と同じ機能を、素のHTML/CSS/JSで実装。
+     データ保存は localStorage(この端末のブラウザ内のみ)。
+     ============================================================ */
+  :root {
+    --bg: #0E1116;
+    --panel: #171D26;
+    --line: #262E3A;
+    --text: #EDE8DC;
+    --dim: #8A92A0;
+    --home: #FFB22E;
+    --away: #5BC8F5;
+    --danger: #E5604C;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Hiragino Sans','Noto Sans JP',system-ui,sans-serif;
+    padding: 12px 12px 32px;
+    max-width: 560px;
+    margin-inline: auto;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  .title { text-align: center; margin-bottom: 10px; }
+  .title-text { font-size: 13px; letter-spacing: .35em; color: var(--dim); font-weight: 700; }
+  .wood { height: 4px; border-radius: 2px; margin-top: 6px;
+          background: linear-gradient(90deg,#B07A45,#8F5E33 55%,#B07A45); }
+
+  .toprow { display: flex; gap: 8px; margin-bottom: 10px; }
+  #clockBtn {
+    flex: 1; border-radius: 12px; padding: 10px 8px;
+    font-size: 14px; font-weight: 800; border: 1px solid transparent;
+    transition: background .15s;
+  }
+  #clockBtn.start { background: var(--home); color: #1A1205; }
+  #clockBtn.running { background: var(--panel); color: var(--home); border-color: var(--home); }
+  #clockBtn.confirm { background: var(--danger); color: #fff; }
+
+  .qwrap { display: flex; background: var(--panel); border: 1px solid var(--line);
+           border-radius: 12px; overflow: hidden; }
+  .qbtn { border: none; background: transparent; color: var(--dim);
+          font-weight: 800; font-size: 13px; padding: 0 10px; }
+  .qbtn.active { background: var(--text); color: var(--bg); }
+
+  .board { display: flex; gap: 8px; }
+  .teamcard {
+    flex: 1; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 10px 10px 12px; text-align: center;
+  }
+  .teamcard.t0 { border-top: 3px solid var(--home); }
+  .teamcard.t1 { border-top: 3px solid var(--away); }
+  .tname {
+    width: 100%; background: transparent; border: none; outline: none;
+    font-weight: 800; font-size: 15px; text-align: center; letter-spacing: .08em;
+  }
+  .t0 .tname, .t0 .score, .t0 .ptbtn { color: var(--home); }
+  .t1 .tname, .t1 .score, .t1 .ptbtn { color: var(--away); }
+  .score {
+    font-size: 72px; font-weight: 900; line-height: 1.05;
+    font-variant-numeric: tabular-nums; margin: 2px 0 6px;
+  }
+  .t0 .score { text-shadow: 0 0 18px rgba(255,178,46,.2); }
+  .t1 .score { text-shadow: 0 0 18px rgba(91,200,245,.2); }
+  .ptrow { display: flex; gap: 6px; }
+  .ptbtn {
+    flex: 1; min-height: 58px; font-size: 22px; font-weight: 900;
+    border-radius: 12px;
+  }
+  .t0 .ptbtn { border: 1px solid rgba(255,178,46,.33); background: rgba(255,178,46,.1); }
+  .t1 .ptbtn { border: 1px solid rgba(91,200,245,.33); background: rgba(91,200,245,.1); }
+  .foulbtn {
+    margin-top: 8px; width: 100%; min-height: 40px; border-radius: 10px;
+    border: 1px solid var(--line); background: transparent; color: var(--dim);
+    font-size: 13px; font-weight: 700;
+  }
+
+  #pendingArea { margin-top: 8px; }
+  .pendbox { background: var(--panel); border-radius: 12px; padding: 8px 10px; }
+  .pendbox.t0 { border: 1px solid rgba(255,178,46,.4); }
+  .pendbox.t1 { border: 1px solid rgba(91,200,245,.4); }
+  .pendlabel { font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    min-width: 52px; min-height: 44px; border-radius: 10px;
+    font-weight: 900; font-size: 17px;
+  }
+  .t0chip { border: 1px solid rgba(255,178,46,.4); background: rgba(255,178,46,.1); color: var(--home); }
+  .t1chip { border: 1px solid rgba(91,200,245,.4); background: rgba(91,200,245,.1); color: var(--away); }
+  .t0chip.sel { background: var(--home); color: var(--bg); }
+  .t1chip.sel { background: var(--away); color: var(--bg); }
+
+  .small {
+    border-radius: 10px; border: 1px solid var(--line); background: transparent;
+    color: var(--dim); font-size: 12px; font-weight: 700; padding: 6px 10px;
+  }
+  .small.warn { color: var(--danger); border-color: rgba(229,96,76,.4); }
+
+  .oprow { display: flex; gap: 8px; margin-top: 10px; }
+  #undoBtn {
+    flex: 2; min-height: 48px; border-radius: 12px; font-weight: 800; font-size: 15px;
+    border: 1px solid rgba(229,96,76,.4); background: rgba(229,96,76,.1); color: var(--danger);
+  }
+  #undoBtn:disabled { background: transparent; color: var(--dim); cursor: default; }
+  #csvBtn {
+    flex: 1; min-height: 48px; border-radius: 12px; font-weight: 700; font-size: 13px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  }
+  #csvBtn:disabled { color: var(--dim); cursor: default; }
+  #resetBtn { flex: 1; min-height: 48px; }
+  #resetBtn.confirm { background: var(--danger); color: #fff; border-color: transparent; }
+
+  .toggles { display: flex; gap: 8px; margin-top: 8px; }
+  .toggles .small { flex: 1; }
+
+  .panelbox {
+    margin-top: 8px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px;
+  }
+  .rlabel { font-size: 12px; font-weight: 800; margin-bottom: 4px; }
+  .rlabel.t0 { color: var(--home); } .rlabel.t1 { color: var(--away); }
+  .rinput {
+    width: 100%; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); font-size: 15px; padding: 8px 10px;
+    outline: none; margin-bottom: 10px;
+  }
+  .cliprow { display: flex; align-items: center; gap: 10px;
+             border-top: 1px solid var(--line); padding-top: 10px; }
+  .clipnote { font-size: 11px; color: var(--dim); margin-top: 6px; line-height: 1.5; }
+
+  .boxwrap { margin-top: 8px; display: flex; gap: 8px; }
+  .boxcard { flex: 1; background: var(--panel); border: 1px solid var(--line);
+             border-radius: 12px; padding: 10px; }
+  .boxhead { display: flex; justify-content: space-between; font-size: 12px;
+             font-weight: 800; margin-bottom: 6px; }
+  .boxrow { display: flex; justify-content: space-between; font-size: 14px;
+            padding: 3px 0; font-variant-numeric: tabular-nums; }
+  .boxrow.hot { color: var(--danger); }
+
+  .logwrap { margin-top: 14px; background: var(--panel); border: 1px solid var(--line);
+             border-radius: 14px; overflow: hidden; }
+  .loghead { display: flex; justify-content: space-between; padding: 8px 12px;
+             font-size: 12px; font-weight: 800; letter-spacing: .1em;
+             color: var(--dim); border-bottom: 1px solid var(--line); }
+  .logbody { max-height: 260px; overflow-y: auto; }
+  .logempty { padding: 16px; color: var(--dim); font-size: 13px; }
+  .logrow { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+            border-bottom: 1px solid rgba(38,46,58,.33); font-size: 13.5px; cursor: pointer; }
+  .logrow.sel0 { background: rgba(255,178,46,.08); }
+  .logrow.sel1 { background: rgba(91,200,245,.08); }
+  .lclip { color: var(--dim); min-width: 30px; font-size: 11px; }
+  .ltime { color: var(--dim); min-width: 44px; font-variant-numeric: tabular-nums; }
+  .lq { color: var(--dim); min-width: 22px; font-size: 11px; }
+  .lteam { font-weight: 800; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lteam.t0 { color: var(--home); } .lteam.t1 { color: var(--away); }
+  .lpts { font-weight: 800; min-width: 56px; text-align: right; }
+  .lscore { color: var(--dim); min-width: 52px; text-align: right; font-size: 12px;
+            font-variant-numeric: tabular-nums; }
+  .footer { text-align: center; margin-top: 12px; font-size: 11px; color: var(--dim); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="title">
+  <div class="title-text">SCORE TRACKER</div>
+  <div class="wood"></div>
+</div>
+
+<div class="toprow">
+  <button id="clockBtn" class="start">▶ 計時開始(RECと同時に)</button>
+  <div class="qwrap" id="qwrap"></div>
+</div>
+
+<div class="board" id="board"></div>
+
+<div id="pendingArea"></div>
+
+<div class="oprow">
+  <button id="undoBtn" disabled>↩ 1つ取り消す</button>
+  <button id="csvBtn" disabled>CSV保存</button>
+  <button id="resetBtn" class="small">新しい試合</button>
+</div>
+
+<div class="toggles">
+  <button id="settingsToggle" class="small">▼ 設定(背番号・クリップ)</button>
+  <button id="boxToggle" class="small">▼ 選手別集計</button>
+</div>
+
+<div id="settingsPanel" class="panelbox hidden">
+  <div class="rlabel t0" id="rlabel0"></div>
+  <input class="rinput" id="roster0" placeholder="未登録なら選手チップは出ません">
+  <div class="rlabel t1" id="rlabel1"></div>
+  <input class="rinput" id="roster1" placeholder="未登録なら選手チップは出ません">
+  <div class="cliprow">
+    <span style="font-size:12px;color:var(--dim);flex:1" id="clipLabel"></span>
+    <button class="small" id="clipMinus" style="min-width:44px;min-height:38px;font-size:16px">−</button>
+    <button class="small" id="clipPlus" style="min-width:44px;min-height:38px;font-size:16px">＋</button>
+  </div>
+  <div class="clipnote">
+    普段は使いません。RECの押し忘れや誤タップで、アプリの番号と実際の動画ファイル数が
+    ズレたときだけ、ここで合わせ直します(ログのC番号=SDカード内の何本目か、を守るため)。
+  </div>
+</div>
+
+<div id="boxPanel" class="boxwrap hidden"></div>
+
+<div class="logwrap">
+  <div class="loghead">
+    <span>PLAY-BY-PLAY(新しい順)</span>
+    <span style="font-weight:400;letter-spacing:0">行タップで選手を修正</span>
+  </div>
+  <div class="logbody" id="logBody"></div>
+</div>
+
+<div class="footer">データは自動保存されます(この端末・このブラウザ内)</div>
+
+<script>
+// ============================================================
+// アプリ本体(素のJavaScript版)
+// React版との対応:
+//   useState の代わりに → state オブジェクト + render関数の手動呼び出し
+//   window.storage の代わりに → localStorage(Web標準)
+// ============================================================
+
+const QUARTERS = ["Q1", "Q2", "Q3", "Q4", "OT"];
+const STORAGE_KEY = "bball_game_v2";
+
+// ---- 状態(アプリが覚えておくデータ) ----
+let state = {
+  teams: [
+    { name: "HOME", score: 0, fouls: 0 },
+    { name: "AWAY", score: 0, fouls: 0 },
+  ],
+  quarter: 0,
+  events: [],
+  startAt: null,
+  clipNo: 0,
+  roster: ["", ""],
+};
+let pendingId = null;     // 選手選択中のイベントID(保存しない一時状態)
+let confirming = null;    // "stop" / "reset" / null
+let confirmTimer = null;
+
+// ---- 保存と復元(localStorage = この端末のブラウザ内に保存) ----
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) { console.error("保存に失敗:", e); }
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      state = {
+        teams: d.teams ?? state.teams,
+        quarter: d.quarter ?? 0,
+        events: d.events ?? [],
+        startAt: d.startAt ?? null,
+        clipNo: d.clipNo ?? 0,
+        roster: d.roster ?? ["", ""],
+      };
+    }
+  } catch (e) { /* 初回起動は正常 */ }
+}
+
+// ---- 小さな道具たち ----
+function fmtElapsed(sec) {
+  if (sec == null) return "--:--";
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+}
+function esc(s) { // HTMLに文字列を埋め込むときの安全化
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function rosterList(i) {
+  return state.roster[i].split(/[,、\s]+/).map(s => s.trim()).filter(Boolean);
+}
+function accentClass(i) { return i === 0 ? "t0" : "t1"; }
+
+// ---- 二度押し確認 ----
+function armConfirm(kind) {
+  confirming = kind;
+  clearTimeout(confirmTimer);
+  confirmTimer = setTimeout(() => { confirming = null; renderClock(); renderOps(); }, 4000);
+}
+function disarmConfirm() {
+  clearTimeout(confirmTimer);
+  confirming = null;
+}
+
+// ---- イベント記録 ----
+function makeEvent(teamIdx, type, pts, teamsAfter) {
+  return {
+    id: Date.now() + Math.random(),
+    q: QUARTERS[state.quarter],
+    team: teamIdx,
+    teamName: state.teams[teamIdx].name,
+    type, pts,
+    player: null,
+    clip: state.startAt ? state.clipNo : null,
+    elapsed: state.startAt ? Math.floor((Date.now() - state.startAt) / 1000) : null,
+    clock: new Date().toLocaleTimeString("ja-JP"),
+    scoreLine: teamsAfter[0].score + "-" + teamsAfter[1].score,
+  };
+}
+
+function addPoints(teamIdx, pts) {
+  state.teams[teamIdx].score += pts;
+  const e = makeEvent(teamIdx, "score", pts, state.teams);
+  state.events.unshift(e);
+  pendingId = rosterList(teamIdx).length > 0 ? e.id : null;
+  save(); renderAll();
+}
+
+function addFoul(teamIdx) {
+  state.teams[teamIdx].fouls += 1;
+  const e = makeEvent(teamIdx, "foul", 0, state.teams);
+  state.events.unshift(e);
+  pendingId = rosterList(teamIdx).length > 0 ? e.id : null;
+  save(); renderAll();
+}
+
+function assignPlayer(num) {
+  const e = state.events.find(e => e.id === pendingId);
+  if (e) e.player = num;
+  pendingId = null;
+  save(); renderAll();
+}
+
+function undo() {
+  if (state.events.length === 0) return;
+  const last = state.events[0];
+  const t = state.teams[last.team];
+  if (last.type === "score") t.score -= last.pts;
+  else t.fouls = Math.max(0, t.fouls - 1);
+  state.events.shift();
+  if (pendingId === last.id) pendingId = null;
+  save(); renderAll();
+}
+
+// ---- 計時(REC連動・二度押し確認) ----
+function handleClockButton() {
+  if (!state.startAt) {
+    state.startAt = Date.now();
+    state.clipNo += 1;
+    disarmConfirm();
+  } else if (confirming !== "stop") {
+    armConfirm("stop");
+  } else {
+    state.startAt = null;
+    disarmConfirm();
+  }
+  save(); renderClock(); renderSettings();
+}
+
+function handleResetButton() {
+  if (confirming !== "reset") {
+    armConfirm("reset");
+    renderOps();
+    return;
+  }
+  state.teams.forEach(t => { t.score = 0; t.fouls = 0; });
+  state.quarter = 0;
+  state.events = [];
+  state.startAt = null;
+  state.clipNo = 0;
+  pendingId = null;
+  disarmConfirm();
+  save(); renderAll();
+}
+
+// ---- CSV書き出し ----
+function exportCSV() {
+  if (state.events.length === 0) return;
+  const header = "クリップ,経過時間,時刻,ピリオド,チーム,選手,種別,得点,スコア";
+  const rows = [...state.events].reverse().map(e => [
+    e.clip ?? "",
+    fmtElapsed(e.elapsed),
+    e.clock,
+    e.q,
+    e.teamName,
+    e.player ? "#" + e.player : "",
+    e.type === "score" ? "得点" : "ファウル",
+    e.type === "score" ? "+" + e.pts : "",
+    e.scoreLine,
+  ].join(","));
+  const blob = new Blob(["\uFEFF" + [header, ...rows].join("\n")],
+    { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "score_log_" + new Date().toISOString().slice(0, 10) + ".csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ---- 選手別集計 ----
+function boxScore(teamIdx) {
+  const totals = {};
+  for (const e of state.events) {
+    if (e.team !== teamIdx || !e.player) continue;
+    if (!totals[e.player]) totals[e.player] = { pts: 0, fouls: 0 };
+    if (e.type === "score") totals[e.player].pts += e.pts;
+    if (e.type === "foul") totals[e.player].fouls += 1;
+  }
+  return Object.entries(totals).sort((a, b) => b[1].pts - a[1].pts);
+}
+
+// ============================================================
+// 画面描画(stateの内容をHTMLに反映する関数たち)
+// ============================================================
+
+function renderClock() {
+  const btn = document.getElementById("clockBtn");
+  const elapsed = state.startAt ? Math.floor((Date.now() - state.startAt) / 1000) : null;
+  if (!state.startAt) {
+    btn.className = "start";
+    btn.textContent = state.clipNo === 0
+      ? "▶ 計時開始(RECと同時に)"
+      : "▶ クリップ" + (state.clipNo + 1) + " 開始(RECと同時に)";
+  } else if (confirming === "stop") {
+    btn.className = "confirm";
+    btn.textContent = "もう一度タップで停止(クリップ" + state.clipNo + " " + fmtElapsed(elapsed) + ")";
+  } else {
+    btn.className = "running";
+    btn.textContent = "● クリップ" + state.clipNo + " " + fmtElapsed(elapsed) + "(タップで停止へ)";
+  }
+}
+
+function renderQuarters() {
+  const w = document.getElementById("qwrap");
+  w.innerHTML = "";
+  QUARTERS.forEach((q, i) => {
+    const b = document.createElement("button");
+    b.className = "qbtn" + (i === state.quarter ? " active" : "");
+    b.textContent = q;
+    b.onclick = () => { state.quarter = i; save(); renderQuarters(); };
+    w.appendChild(b);
+  });
+}
+
+function renderBoard() {
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+  state.teams.forEach((t, i) => {
+    const card = document.createElement("div");
+    card.className = "teamcard " + accentClass(i);
+
+    const name = document.createElement("input");
+    name.className = "tname";
+    name.value = t.name;
+    name.oninput = () => { state.teams[i].name = name.value; save(); renderSettings(); };
+    card.appendChild(name);
+
+    const score = document.createElement("div");
+    score.className = "score";
+    score.id = "score" + i;
+    score.textContent = t.score;
+    card.appendChild(score);
+
+    const row = document.createElement("div");
+    row.className = "ptrow";
+    [1, 2, 3].forEach(p => {
+      const b = document.createElement("button");
+      b.className = "ptbtn";
+      b.textContent = "+" + p;
+      b.onclick = () => addPoints(i, p);
+      row.appendChild(b);
+    });
+    card.appendChild(row);
+
+    const foul = document.createElement("button");
+    foul.className = "foulbtn";
+    foul.id = "foul" + i;
+    foul.textContent = "ファウル " + t.fouls;
+    foul.onclick = () => addFoul(i);
+    card.appendChild(foul);
+
+    board.appendChild(card);
+  });
+}
+
+// スコアとファウル数だけ更新(チーム名入力のフォーカスを守るため、カード全体は作り直さない)
+function renderScores() {
+  state.teams.forEach((t, i) => {
+    document.getElementById("score" + i).textContent = t.score;
+    document.getElementById("foul" + i).textContent = "ファウル " + t.fouls;
+  });
+}
+
+function renderPending() {
+  const area = document.getElementById("pendingArea");
+  const e = state.events.find(ev => ev.id === pendingId);
+  if (!e) { area.innerHTML = ""; return; }
+  const isPast = state.events[0]?.id !== e.id;
+  const ac = accentClass(e.team);
+  const what = e.type === "score" ? "+" + e.pts : "ファウル";
+  const label = isPast
+    ? "修正中: " + (e.clip ? "C" + e.clip + " " : "") + fmtElapsed(e.elapsed) + " の " + what +
+      "(" + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + ")"
+    : "いまの" + what + "は誰?(あとで直せます・スキップ可)";
+
+  const nums = rosterList(e.team);
+  let inner = '<div class="pendbox ' + ac + '"><div class="pendlabel">' + label + "</div>";
+  if (nums.length === 0) {
+    inner += '<div style="font-size:12px;color:var(--dim)">' + esc(e.teamName) +
+      " の背番号が未登録です。「▼ 設定」から登録してください。</div>";
+  } else {
+    inner += '<div class="chips">';
+    nums.forEach(n => {
+      const sel = e.player === n ? " sel" : "";
+      inner += '<button class="chip ' + ac + 'chip' + sel + '" data-num="' + esc(n) + '">#' + esc(n) + "</button>";
+    });
+    if (e.player) inner += '<button class="small warn" data-act="clear" style="min-height:44px">外す</button>';
+    inner += '<button class="small" data-act="close" style="min-height:44px">' +
+      (isPast ? "閉じる" : "スキップ") + "</button></div>";
+  }
+  inner += "</div>";
+  area.innerHTML = inner;
+
+  area.querySelectorAll(".chip").forEach(b =>
+    b.onclick = () => assignPlayer(b.dataset.num));
+  const clear = area.querySelector('[data-act="clear"]');
+  if (clear) clear.onclick = () => assignPlayer(null);
+  const close = area.querySelector('[data-act="close"]');
+  if (close) close.onclick = () => { pendingId = null; renderPending(); renderLog(); };
+}
+
+function renderOps() {
+  const has = state.events.length > 0;
+  document.getElementById("undoBtn").disabled = !has;
+  document.getElementById("csvBtn").disabled = !has;
+  const r = document.getElementById("resetBtn");
+  if (confirming === "reset") { r.classList.add("confirm"); r.textContent = "もう一度で全消去"; }
+  else { r.classList.remove("confirm"); r.textContent = "新しい試合"; }
+}
+
+function renderSettings() {
+  document.getElementById("rlabel0").textContent =
+    state.teams[0].name + " の背番号(カンマ区切り。例: 4,5,7,10)";
+  document.getElementById("rlabel1").textContent =
+    state.teams[1].name + " の背番号(カンマ区切り。例: 4,5,7,10)";
+  document.getElementById("clipLabel").textContent =
+    "クリップ番号の復旧(現在: " + (state.clipNo === 0 ? "未開始" : "クリップ" + state.clipNo) + ")";
+}
+
+function renderBox() {
+  const panel = document.getElementById("boxPanel");
+  panel.innerHTML = "";
+  state.teams.forEach((t, i) => {
+    const card = document.createElement("div");
+    card.className = "boxcard";
+    let inner = '<div class="boxhead ' + accentClass(i) + '"><span style="color:' +
+      (i === 0 ? "var(--home)" : "var(--away)") + '">' + esc(t.name) +
+      '</span><span style="color:var(--dim)">得点 / F</span></div>';
+    const rows = boxScore(i);
+    if (rows.length === 0) {
+      inner += '<div style="font-size:12px;color:var(--dim)">記録なし</div>';
+    } else {
+      rows.forEach(([num, v]) => {
+        inner += '<div class="boxrow' + (v.fouls >= 4 ? " hot" : "") + '"><span style="font-weight:800">#' +
+          esc(num) + "</span><span>" + v.pts + "点 / " + v.fouls + "F</span></div>";
+      });
+    }
+    card.innerHTML = inner;
+    panel.appendChild(card);
+  });
+}
+
+function renderLog() {
+  const body = document.getElementById("logBody");
+  if (state.events.length === 0) {
+    body.innerHTML = '<div class="logempty">まだ記録がありません。RECと同時に「計時開始」を押すと、' +
+      "ログの経過時間がそのクリップの再生位置と一致します。</div>";
+    return;
+  }
+  body.innerHTML = "";
+  state.events.forEach(e => {
+    const row = document.createElement("div");
+    const ac = accentClass(e.team);
+    row.className = "logrow" + (e.id === pendingId ? " sel" + e.team : "");
+    row.innerHTML =
+      '<span class="lclip">' + (e.clip ? "C" + e.clip : "--") + "</span>" +
+      '<span class="ltime">' + fmtElapsed(e.elapsed) + "</span>" +
+      '<span class="lq">' + e.q + "</span>" +
+      '<span class="lteam ' + ac + '">' + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + "</span>" +
+      '<span class="lpts">' + (e.type === "score" ? "+" + e.pts : "ファウル") + "</span>" +
+      '<span class="lscore">' + e.scoreLine + "</span>";
+    row.onclick = () => { pendingId = e.id; renderPending(); renderLog(); };
+    body.appendChild(row);
+  });
+}
+
+function renderAll() {
+  renderClock(); renderQuarters(); renderScores(); renderPending();
+  renderOps(); renderSettings(); renderBox(); renderLog();
+}
+
+// ============================================================
+// 初期化(ページを開いたときに1回だけ走る処理)
+// ============================================================
+load();
+renderBoard();      // チームカードの骨組みを作る(以後は数字だけ更新)
+renderAll();
+
+// ロスター入力欄の初期値とイベント
+["roster0", "roster1"].forEach((id, i) => {
+  const input = document.getElementById(id);
+  input.value = state.roster[i];
+  input.oninput = () => { state.roster[i] = input.value; save(); };
+});
+
+// 各ボタン
+document.getElementById("clockBtn").onclick = handleClockButton;
+document.getElementById("undoBtn").onclick = undo;
+document.getElementById("csvBtn").onclick = exportCSV;
+document.getElementById("resetBtn").onclick = handleResetButton;
+document.getElementById("clipMinus").onclick = () => {
+  state.clipNo = Math.max(0, state.clipNo - 1); save(); renderSettings(); renderClock();
+};
+document.getElementById("clipPlus").onclick = () => {
+  state.clipNo += 1; save(); renderSettings(); renderClock();
+};
+document.getElementById("settingsToggle").onclick = function () {
+  const p = document.getElementById("settingsPanel");
+  p.classList.toggle("hidden");
+  this.textContent = p.classList.contains("hidden") ? "▼ 設定(背番号・クリップ)" : "▲ 設定を閉じる";
+};
+document.getElementById("boxToggle").onclick = function () {
+  const p = document.getElementById("boxPanel");
+  p.classList.toggle("hidden");
+  this.textContent = p.classList.contains("hidden") ? "▼ 選手別集計" : "▲ 選手別集計を閉じる";
+  renderBox();
+};
+
+// 1秒ごとに計時表示を更新
+setInterval(renderClock, 1000);
+</script>
+</body>
+</html>
