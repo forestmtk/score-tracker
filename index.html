@@ -108,6 +108,8 @@
     color: var(--dim); font-size: 12px; font-weight: 700; padding: 6px 10px;
   }
   .small.warn { color: var(--danger); border-color: rgba(229,96,76,.4); }
+  /* ★v5修正: 「もう一度で削除」は新しい試合と同じ赤背景で危険度を示す */
+  .small.confirm { background: var(--danger); color: #fff; border-color: transparent; }
 
   .oprow { display: flex; gap: 8px; margin-top: 10px; }
   #undoBtn {
@@ -171,9 +173,90 @@
             font-variant-numeric: tabular-nums; }
   .footer { text-align: center; margin-top: 12px; font-size: 11px; color: var(--dim); }
   .hidden { display: none; }
+
+  /* ============================================================
+     ★v5: かんたんモード(quick mode)
+     カメラ取付用。横向き全画面2分割、タップ=得点、長押し=ファウル。
+     ============================================================ */
+  .modetoggle {
+    position: fixed; top: 8px; right: 8px; z-index: 50;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--dim); font-size: 11px; font-weight: 700; padding: 6px 10px;
+    opacity: .85;
+  }
+  /* ★v5修正: かんたんモード中は、画面の隅にあるボタンを大きく・押しやすくする */
+  body.quick .modetoggle {
+    top: 10px; right: 10px; font-size: 13px; padding: 10px 16px;
+    opacity: 1; background: var(--panel); border: 1px solid var(--line);
+  }
+  body.quick { padding: 0; max-width: none; overflow: hidden; height: 100vh; }
+  #quickScreen {
+    position: fixed; inset: 0; display: flex; z-index: 40;
+    background: var(--bg); -webkit-user-select: none; user-select: none;
+  }
+  #quickScreen.hidden { display: none; }
+  .qzone {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-weight: 900; gap: 6px; position: relative;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .qzone.t0 { background: rgba(255,178,46,.08); color: var(--home); border-right: 1px solid var(--line); }
+  .qzone.t1 { background: rgba(91,200,245,.08); color: var(--away); }
+  .qzone.flash { filter: brightness(1.6); }
+  .qzone .qname { font-size: 22px; letter-spacing: .1em; }
+  .qzone .qscore { font-size: 96px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .qzone .qscorelabel { font-size: 12px; color: var(--dim); font-weight: 700; margin-top: -8px; }
+  .qzone .qhintfixed {
+    position: absolute; bottom: 14px; left: 0; right: 0; text-align: center;
+    font-size: 12px; color: var(--dim); font-weight: 700; pointer-events: none;
+  }
+  .qzone .qcount { font-size: 13px; color: var(--dim); font-weight: 700; }
+  .qzone .qhint { font-size: 12px; color: var(--dim); font-weight: 700; margin-top: 4px; }
+  .qcenter {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 41;
+    pointer-events: none;
+  }
+  .qclockbtn, .qundobtn, .qwakebtn {
+    pointer-events: auto;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--text); font-size: 12px; font-weight: 800; padding: 8px 14px;
+    opacity: .9; white-space: nowrap;
+  }
+  .qundobtn { color: var(--danger); border-color: rgba(229,96,76,.4); }
+  .qclockbtn.running { color: var(--home); border-color: var(--home); }
+  .qwakebtn.on { color: var(--home); border-color: var(--home); }
+  .qfoulflag {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; font-weight: 800; color: var(--danger); pointer-events: none;
+  }
 </style>
 </head>
 <body>
+
+<button class="modetoggle" id="modeToggle">▦ かんたん</button>
+
+<div id="quickScreen" class="hidden">
+  <div class="qzone t0" id="qzone0">
+    <div class="qname" id="qzname0"></div>
+    <div class="qscore" id="qzscore0">0</div>
+    <div class="qscorelabel">未確定の記録</div>
+    <div class="qcount" id="qzcount0"></div>
+    <div class="qhintfixed">タップ=得点 ・ 長押し=ファウル</div>
+  </div>
+  <div class="qzone t1" id="qzone1">
+    <div class="qname" id="qzname1"></div>
+    <div class="qscore" id="qzscore1">0</div>
+    <div class="qscorelabel">未確定の記録</div>
+    <div class="qcount" id="qzcount1"></div>
+    <div class="qhintfixed">タップ=得点 ・ 長押し=ファウル</div>
+  </div>
+  <div class="qcenter">
+    <button class="qclockbtn" id="qClockBtn"></button>
+    <button class="qundobtn" id="qUndoBtn">↩ 直前を取り消す</button>
+    <button class="qwakebtn" id="qWakeBtn">画面オフ防止: OFF</button>
+  </div>
+</div>
 
 <div class="title">
   <div class="title-text">SCORE TRACKER</div>
@@ -252,6 +335,11 @@ let state = {
   roster: ["", ""],
 };
 let pendingId = null;     // 選手選択中のイベントID(保存しない一時状態)
+let changeTypeOpen = null; // ★v5: 「種別を変更」UIを開いている対象のイベントID
+let lastEditedId = null;  // ★v5修正: 直前に編集した行(パネルを閉じてもハイライトを残す)
+let deleteConfirmId = null; // ★v5: 削除の二度押し確認対象のイベントID
+let deleteConfirmTimer = null;
+let deleteConfirmArmedAt = 0; // ★v5修正: 削除確認になった時刻(誤連打防止)
 let confirming = null;    // "stop" / "reset" / null
 let confirmTimer = null;
 
@@ -294,8 +382,12 @@ function rosterList(i) {
 function accentClass(i) { return i === 0 ? "t0" : "t1"; }
 
 // ---- 二度押し確認 ----
+let confirmArmedAt = 0; // ★v5修正: 確認状態になった時刻(直後の誤連打を無視するため)
+const CONFIRM_COOLDOWN = 350; // ms。この時間内の2回目クリックはダブルタップとみなして無視
+
 function armConfirm(kind) {
   confirming = kind;
+  confirmArmedAt = Date.now();
   clearTimeout(confirmTimer);
   confirmTimer = setTimeout(() => { confirming = null; renderClock(); renderOps(); }, 4000);
 }
@@ -336,10 +428,96 @@ function addFoul(teamIdx) {
   save(); renderAll();
 }
 
+// ★v5: かんたんモードからの記録。
+//   得点(quickScore): pts未確定(null)。チームスコアはまだ加算しない
+//     → detailモードで点数を確定したとき addPoints と同じ加算処理を行う
+//   ファウル(quickFoul): 既存のaddFoulと同じ(数に曖昧さがないため即時加算)
+function addQuickScore(teamIdx) {
+  const e = makeEvent(teamIdx, "score", null, state.teams);
+  e.quick = true; // 未確定の目印(detailモードのpendingで強調表示に使う)
+  state.events.unshift(e);
+  save();
+}
+function addQuickFoul(teamIdx) {
+  addFoul(teamIdx);
+}
+// ★v5修正: イベントの種別・点数を変更する汎用関数。
+//   未確定(quick)からの確定、確定済みの記録のやり直し、どちらにも対応。
+//   古い値をチームの集計から取り消し、新しい値を加算し直すことで、
+//   どんな組み合わせの変更(得点⇄ファウル、+2→+3 など)でもスコアの整合性を保つ。
+
+// ★v5修正: イベント1件分の影響(スコア・ファウル数)をチームから取り消す共通処理。
+//   changeEventType(種別変更)とdeleteEvent(削除)の両方から使う。
+function revertEventEffect(e) {
+  const t = state.teams[e.team];
+  if (e.type === "score" && e.pts != null) t.score -= e.pts;
+  if (e.type === "foul") t.fouls = Math.max(0, t.fouls - 1);
+}
+
+function changeEventType(eventId, newType, newPts) {
+  const e = state.events.find(ev => ev.id === eventId);
+  if (!e) return;
+  const t = state.teams[e.team];
+
+  revertEventEffect(e); // 古い値を取り消す
+
+  // 新しい値を反映する
+  e.type = newType;
+  e.pts = newType === "score" ? newPts : 0;
+  e.quick = false;
+  if (newType === "score") t.score += newPts;
+  else t.fouls += 1;
+
+  e.scoreLine = state.teams[0].score + "-" + state.teams[1].score;
+  pendingId = e.id; // 選択状態を維持(どの行を直したか見失わないようにする)
+  save(); renderAll();
+}
+// quick得点を確定(detailモードの+1/+2/+3に相当)
+function confirmQuickScore(eventId, pts) { changeEventType(eventId, "score", pts); }
+// 未確定の得点を「実はファウルだった」に変更
+function convertQuickToFoul(eventId) { changeEventType(eventId, "foul", 0); }
+
+// ★v5修正: 押し間違いなどで「そもそも無かったことにする」削除。
+//   スコア・ファウル数への影響を取り消してから、events配列からも除く。
+function deleteEvent(eventId) {
+  const idx = state.events.findIndex(ev => ev.id === eventId);
+  if (idx === -1) return;
+  const e = state.events[idx];
+  revertEventEffect(e);
+  // スコアラインの再計算は不要(削除後の表示は各行が持つscoreLineをそのまま使うため、
+  // ここではチーム集計のみ整合させる。以降の新規イベントは正しいscoreLineで記録される)
+  state.events.splice(idx, 1);
+  pendingId = null;
+  changeTypeOpen = null;
+  lastEditedId = null;
+  save(); renderAll();
+}
+
+// ★v5修正: 削除ボタンの二度押し処理。1回目で確認状態、2回目(クールダウン後)で実行。
+//   未確定行・確定済み行の両方から呼ばれる共通処理。
+function handleDeleteClick(eventId) {
+  if (deleteConfirmId !== eventId) {
+    deleteConfirmId = eventId;
+    deleteConfirmArmedAt = Date.now();
+    clearTimeout(deleteConfirmTimer);
+    deleteConfirmTimer = setTimeout(() => { deleteConfirmId = null; renderPending(); }, 4000);
+    renderPending();
+  } else {
+    // 確認状態になった直後(ダブルタップ相当)の実行を無視する
+    if (Date.now() - deleteConfirmArmedAt < CONFIRM_COOLDOWN) return;
+    clearTimeout(deleteConfirmTimer);
+    deleteConfirmId = null;
+    deleteEvent(eventId);
+  }
+}
+
 function assignPlayer(num) {
   const e = state.events.find(e => e.id === pendingId);
   if (e) e.player = num;
+  lastEditedId = pendingId; // ★v5修正: パネルを閉じてもこの行のハイライトは残す
   pendingId = null;
+  changeTypeOpen = null;
+  deleteConfirmId = null; clearTimeout(deleteConfirmTimer);
   save(); renderAll();
 }
 
@@ -347,10 +525,13 @@ function undo() {
   if (state.events.length === 0) return;
   const last = state.events[0];
   const t = state.teams[last.team];
-  if (last.type === "score") t.score -= last.pts;
-  else t.fouls = Math.max(0, t.fouls - 1);
+  if (last.type === "score") {
+    if (last.pts != null) t.score -= last.pts; // 確定済みのみスコアを戻す
+  } else {
+    t.fouls = Math.max(0, t.fouls - 1);
+  }
   state.events.shift();
-  if (pendingId === last.id) pendingId = null;
+  if (pendingId === last.id) { pendingId = null; changeTypeOpen = null; }
   save(); renderAll();
 }
 
@@ -363,6 +544,8 @@ function handleClockButton() {
   } else if (confirming !== "stop") {
     armConfirm("stop");
   } else {
+    // ★v5修正: 確認状態になった直後(ダブルタップ相当)の停止を無視する
+    if (Date.now() - confirmArmedAt < CONFIRM_COOLDOWN) return;
     state.startAt = null;
     disarmConfirm();
   }
@@ -375,12 +558,15 @@ function handleResetButton() {
     renderOps();
     return;
   }
+  // ★v5修正: 確認状態になった直後(ダブルタップ相当)の実行を無視する
+  if (Date.now() - confirmArmedAt < CONFIRM_COOLDOWN) return;
   state.teams.forEach(t => { t.score = 0; t.fouls = 0; });
   state.quarter = 0;
   state.events = [];
   state.startAt = null;
   state.clipNo = 0;
   pendingId = null;
+  changeTypeOpen = null;
   disarmConfirm();
   save(); renderAll();
 }
@@ -397,7 +583,7 @@ function exportCSV() {
     e.teamName,
     e.player ? "#" + e.player : "",
     e.type === "score" ? "得点" : "ファウル",
-    e.type === "score" ? "+" + e.pts : "",
+    e.type === "score" ? (e.pts == null ? "未確定" : "+" + e.pts) : "",
     e.scoreLine,
   ].join(","));
   const blob = new Blob(["\uFEFF" + [header, ...rows].join("\n")],
@@ -416,7 +602,7 @@ function boxScore(teamIdx) {
   for (const e of state.events) {
     if (e.team !== teamIdx || !e.player) continue;
     if (!totals[e.player]) totals[e.player] = { pts: 0, fouls: 0 };
-    if (e.type === "score") totals[e.player].pts += e.pts;
+    if (e.type === "score" && e.pts != null) totals[e.player].pts += e.pts;
     if (e.type === "foul") totals[e.player].fouls += 1;
   }
   return Object.entries(totals).sort((a, b) => b[1].pts - a[1].pts);
@@ -508,9 +694,62 @@ function renderPending() {
   const area = document.getElementById("pendingArea");
   const e = state.events.find(ev => ev.id === pendingId);
   if (!e) { area.innerHTML = ""; return; }
-  const isPast = state.events[0]?.id !== e.id;
   const ac = accentClass(e.team);
+
+  // ★v5: 得点が未確定(かんたんモードで記録)の場合 → まず+1/+2/+3を選ぶ
+  if (e.type === "score" && e.pts == null) {
+    const delLabel = deleteConfirmId === e.id ? "もう一度で削除" : "この記録を削除";
+    const delCls = "small warn" + (deleteConfirmId === e.id ? " confirm" : "");
+    let inner = '<div class="pendbox ' + ac + '"><div class="pendlabel">' +
+      "未確定の記録(" + (e.clip ? "C" + e.clip + " " : "") + fmtElapsed(e.elapsed) + " " +
+      esc(e.teamName) + "): 何点?</div>";
+    inner += '<div class="chips">';
+    [1, 2, 3].forEach(p => {
+      inner += '<button class="chip ' + ac + 'chip" data-pts="' + p + '" style="font-size:22px">+' + p + "</button>";
+    });
+    // ★v5修正: 長押しのつもりがタップになっていた場合の救済(時間・クリップ番号を保ったままファウルへ変換)
+    inner += '<button class="small warn" data-act="foul" style="min-height:44px">実はファウル</button>';
+    // ★v5: そもそも記録自体が誤りだった場合の削除(二度押し確認)
+    inner += '<button class="' + delCls + '" data-act="delete" style="min-height:44px">' + delLabel + '</button>';
+    inner += '<button class="small" data-act="close" style="min-height:44px">閉じる</button></div></div>';
+    area.innerHTML = inner;
+    area.querySelectorAll("[data-pts]").forEach(b =>
+      b.onclick = () => confirmQuickScore(e.id, Number(b.dataset.pts)));
+    const foulBtn = area.querySelector('[data-act="foul"]');
+    if (foulBtn) foulBtn.onclick = () => convertQuickToFoul(e.id);
+    const deleteBtn = area.querySelector('[data-act="delete"]');
+    if (deleteBtn) deleteBtn.onclick = () => handleDeleteClick(e.id);
+    const close = area.querySelector('[data-act="close"]');
+    if (close) close.onclick = () => { pendingId = null; deleteConfirmId = null; renderPending(); renderLog(); };
+    return;
+  }
+
+  const isPast = state.events[0]?.id !== e.id;
   const what = e.type === "score" ? "+" + e.pts : "ファウル";
+
+  // ★v5: 「種別を変更」が開かれている場合 → +1/+2/+3/ファウルの4択を表示
+  if (changeTypeOpen === e.id) {
+    let inner = '<div class="pendbox ' + ac + '"><div class="pendlabel">' +
+      "種別を変更(" + (e.clip ? "C" + e.clip + " " : "") + fmtElapsed(e.elapsed) + " " +
+      esc(e.teamName) + " ・ 現在: " + what + ")</div>";
+    inner += '<div class="chips">';
+    [1, 2, 3].forEach(p => {
+      const sel = (e.type === "score" && e.pts === p) ? " sel" : "";
+      inner += '<button class="chip ' + ac + 'chip' + sel + '" data-pts="' + p + '" style="font-size:22px">+' + p + "</button>";
+    });
+    const foulSel = e.type === "foul" ? " sel" : "";
+    inner += '<button class="chip ' + ac + 'chip' + foulSel + '" data-act="foul">ファウル</button>';
+    inner += '<button class="small" data-act="close" style="min-height:44px">閉じる</button></div></div>';
+    area.innerHTML = inner;
+    area.querySelectorAll("[data-pts]").forEach(b =>
+      b.onclick = () => { changeEventType(e.id, "score", Number(b.dataset.pts)); changeTypeOpen = null; });
+    const foulBtn = area.querySelector('[data-act="foul"]');
+    if (foulBtn) foulBtn.onclick = () => { changeEventType(e.id, "foul", 0); changeTypeOpen = null; };
+    const close = area.querySelector('[data-act="close"]');
+    if (close) close.onclick = () => { changeTypeOpen = null; renderPending(); };
+    return;
+  }
+
   const label = isPast
     ? "修正中: " + (e.clip ? "C" + e.clip + " " : "") + fmtElapsed(e.elapsed) + " の " + what +
       "(" + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + ")"
@@ -518,6 +757,13 @@ function renderPending() {
 
   const nums = rosterList(e.team);
   let inner = '<div class="pendbox ' + ac + '"><div class="pendlabel">' + label + "</div>";
+  // ★v5: 確定済みの記録を、後から得点⇄ファウルへやり直せるようにする / 削除する
+  const delLabel = deleteConfirmId === e.id ? "もう一度で削除" : "この記録を削除";
+  const delCls = "small warn" + (deleteConfirmId === e.id ? " confirm" : "");
+  inner += '<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">' +
+    '<button class="small warn" data-act="changetype">種別を変更(現在: ' + what + ')</button>' +
+    '<button class="' + delCls + '" data-act="delete">' + delLabel + '</button>' +
+    '</div>';
   if (nums.length === 0) {
     inner += '<div style="font-size:12px;color:var(--dim)">' + esc(e.teamName) +
       " の背番号が未登録です。「▼ 設定」から登録してください。</div>";
@@ -534,12 +780,23 @@ function renderPending() {
   inner += "</div>";
   area.innerHTML = inner;
 
+  const changeBtn = area.querySelector('[data-act="changetype"]');
+  if (changeBtn) changeBtn.onclick = () => {
+    changeTypeOpen = e.id;
+    deleteConfirmId = null; clearTimeout(deleteConfirmTimer);
+    renderPending();
+  };
+
+  // ★v5: 削除(二度押し確認。4秒で自動的に確認状態が解除される)
+  const deleteBtn = area.querySelector('[data-act="delete"]');
+  if (deleteBtn) deleteBtn.onclick = () => handleDeleteClick(e.id);
+
   area.querySelectorAll(".chip").forEach(b =>
     b.onclick = () => assignPlayer(b.dataset.num));
   const clear = area.querySelector('[data-act="clear"]');
   if (clear) clear.onclick = () => assignPlayer(null);
   const close = area.querySelector('[data-act="close"]');
-  if (close) close.onclick = () => { pendingId = null; renderPending(); renderLog(); };
+  if (close) close.onclick = () => { pendingId = null; changeTypeOpen = null; renderPending(); renderLog(); };
 }
 
 function renderOps() {
@@ -594,15 +851,27 @@ function renderLog() {
   state.events.forEach(e => {
     const row = document.createElement("div");
     const ac = accentClass(e.team);
-    row.className = "logrow" + (e.id === pendingId ? " sel" + e.team : "");
+    const unresolved = e.type === "score" && e.pts == null; // ★v5: かんたんモードの未確定記録
+    // ★v5修正: 「いま操作中(pendingId)」と「直前に編集した(lastEditedId)」を区別せず、
+    //   どちらも同じ実線の枠で強調する(分かりやすさのため統一)
+    const highlighted = e.id === pendingId || e.id === lastEditedId;
+    row.className = "logrow";
+    if (unresolved) row.style.background = "rgba(229,96,76,.08)";
+    if (highlighted) {
+      // ★v5修正: 背景色と競合しないよう、枠線+太字で強調する
+      row.style.outline = "2px solid " + (e.team === 0 ? "var(--home)" : "var(--away)");
+      row.style.outlineOffset = "-2px";
+      row.style.fontWeight = "800";
+    }
     row.innerHTML =
       '<span class="lclip">' + (e.clip ? "C" + e.clip : "--") + "</span>" +
       '<span class="ltime">' + fmtElapsed(e.elapsed) + "</span>" +
       '<span class="lq">' + e.q + "</span>" +
       '<span class="lteam ' + ac + '">' + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + "</span>" +
-      '<span class="lpts">' + (e.type === "score" ? "+" + e.pts : "ファウル") + "</span>" +
+      '<span class="lpts"' + (unresolved ? ' style="color:var(--danger)"' : '') + '>' +
+        (e.type === "score" ? (unresolved ? "未確定" : "+" + e.pts) : "ファウル") + "</span>" +
       '<span class="lscore">' + e.scoreLine + "</span>";
-    row.onclick = () => { pendingId = e.id; renderPending(); renderLog(); };
+    row.onclick = () => { pendingId = e.id; changeTypeOpen = null; lastEditedId = null; deleteConfirmId = null; clearTimeout(deleteConfirmTimer); renderPending(); renderLog(); };
     body.appendChild(row);
   });
 }
@@ -651,6 +920,224 @@ document.getElementById("boxToggle").onclick = function () {
 
 // 1秒ごとに計時表示を更新
 setInterval(renderClock, 1000);
+
+// ============================================================
+// ★v5: かんたんモード(quick mode)
+// ============================================================
+const MODE_KEY = "bball_mode_v1";
+let mode = "detail";          // "detail" | "quick"
+let modeManual = false;       // 手動切替済みなら向き変化で上書きしない
+let wakeLock = null;
+let wakeOn = false;
+let holdTimer = null;
+let holdFired = false;
+const HOLD_MS = 500; // 長押し判定(ファウル)
+
+function isLandscape() {
+  return window.matchMedia("(orientation: landscape)").matches;
+}
+
+function loadMode() {
+  try {
+    const raw = localStorage.getItem(MODE_KEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      mode = d.mode ?? mode;
+      modeManual = d.manual ?? false;
+    }
+  } catch (e) { /* なければ向きから決める */ }
+  if (!modeManual) mode = isLandscape() ? "quick" : "detail";
+}
+function saveMode() {
+  try { localStorage.setItem(MODE_KEY, JSON.stringify({ mode, manual: modeManual })); }
+  catch (e) { /* 保存できなくても動作は継続 */ }
+}
+
+function applyMode() {
+  const quickScreen = document.getElementById("quickScreen");
+  const toggle = document.getElementById("modeToggle");
+  if (mode === "quick") {
+    document.body.classList.add("quick");
+    quickScreen.classList.remove("hidden");
+    toggle.textContent = "⊞ 詳細";
+    renderQuick();
+  } else {
+    document.body.classList.remove("quick");
+    quickScreen.classList.add("hidden");
+    toggle.textContent = "▦ かんたん";
+    releaseWakeLock();
+    // ★v5: 未確定イベント(quickで記録したpts:null)があれば、一番新しいものを開いて促す
+    if (!pendingId) {
+      const unresolved = state.events.find(e => e.type === "score" && e.pts == null);
+      if (unresolved) pendingId = unresolved.id;
+    }
+    renderAll();
+  }
+}
+
+function setMode(next, manual) {
+  mode = next;
+  if (manual) modeManual = true;
+  saveMode();
+  applyMode();
+}
+
+// 画面の向きが変わったとき: 手動切替していなければ追従する
+window.matchMedia("(orientation: landscape)").addEventListener("change", () => {
+  if (modeManual) return;
+  setMode(isLandscape() ? "quick" : "detail", false);
+});
+
+document.getElementById("modeToggle").onclick = (ev) => {
+  ev.stopPropagation();
+  setMode(mode === "quick" ? "detail" : "quick", true);
+};
+// ★v5修正: modeToggleの上でのtouch/mouse操作が、背後のqzoneのタップ判定に
+//   伝わらないようにする(かんたんモード中、画面隅のボタンが押しにくい問題への対策)
+["touchstart", "touchend", "mousedown", "mouseup"].forEach(evt => {
+  document.getElementById("modeToggle").addEventListener(evt, (e) => e.stopPropagation());
+});
+// ★v5修正: 中央の「詳細モードへ」ボタンは誤タップが多いため廃止。
+//   右上のmodeToggle(常設・z-indexが高い)で代替する。
+
+// ---- かんたんモードの表示更新 ----
+function renderQuick() {
+  state.teams.forEach((t, i) => {
+    document.getElementById("qzname" + i).textContent = t.name;
+    // ★v5修正: 主役の大きい数字は「未確定の記録件数」(=押した回数のカウンター)。
+    //   タップした瞬間にこの数字が増えることで、押せたことが一目でわかる。
+    const pendingCount = state.events.filter(e => e.team === i && e.type === "score" && e.pts == null).length;
+    document.getElementById("qzscore" + i).textContent = pendingCount;
+    document.getElementById("qzcount" + i).textContent =
+      "確定スコア " + t.score + " ・ ファウル " + t.fouls;
+  });
+  const clockBtn = document.getElementById("qClockBtn");
+  if (state.startAt) {
+    const elapsed = Math.floor((Date.now() - state.startAt) / 1000);
+    clockBtn.className = "qclockbtn running";
+    clockBtn.textContent = "● C" + state.clipNo + " " + fmtElapsed(elapsed);
+  } else {
+    clockBtn.className = "qclockbtn";
+    clockBtn.textContent = "▶ 計時開始";
+  }
+  document.getElementById("qUndoBtn").style.visibility = state.events.length ? "visible" : "hidden";
+}
+
+// ---- かんたんモードのタップ/長押し ----
+function flashZone(i) {
+  const z = document.getElementById("qzone" + i);
+  z.classList.add("flash");
+  setTimeout(() => z.classList.remove("flash"), 120);
+}
+
+[0, 1].forEach(i => {
+  const zone = document.getElementById("qzone" + i);
+  let activePointer = null; // "touch" | "mouse" | null (★v5修正: 二重発火防止)
+
+  const start = (kind) => (ev) => {
+    if (activePointer) return; // 既に別方式の操作中なら無視
+    activePointer = kind;
+    ev.preventDefault();
+    holdFired = false;
+    holdTimer = setTimeout(() => {
+      holdFired = true;
+      addQuickFoul(i);
+      flashZone(i);
+      renderQuick();
+    }, HOLD_MS);
+  };
+  const end = (kind) => (ev) => {
+    if (activePointer !== kind) return;
+    activePointer = null;
+    ev.preventDefault();
+    clearTimeout(holdTimer);
+    if (!holdFired) {
+      addQuickScore(i);
+      flashZone(i);
+      renderQuick();
+    }
+  };
+  const cancel = (kind) => () => {
+    if (activePointer !== kind) return;
+    activePointer = null;
+    clearTimeout(holdTimer);
+  };
+
+  zone.addEventListener("touchstart", start("touch"), { passive: false });
+  zone.addEventListener("touchend", end("touch"), { passive: false });
+  zone.addEventListener("touchcancel", cancel("touch"));
+  // マウス操作(Macでの確認用)
+  zone.addEventListener("mousedown", start("mouse"));
+  zone.addEventListener("mouseup", end("mouse"));
+  zone.addEventListener("mouseleave", cancel("mouse"));
+});
+
+document.getElementById("qClockBtn").onclick = (ev) => {
+  ev.stopPropagation();
+  handleClockButton();
+  renderQuick();
+};
+document.getElementById("qUndoBtn").onclick = (ev) => {
+  ev.stopPropagation();
+  undo();
+  renderQuick();
+};
+
+// ★v5修正: qcenter内のボタン(計時・取り消し・画面オフ防止)は、
+//   背後のqzone(HOME/AWAYタップ判定)へtouch/mouseイベントが伝播すると
+//   iOS Safariでclickが発火しなくなる(押しても反応しない)。
+//   modeToggleと同様に、qcenter全体でイベント伝播を止める。
+["touchstart", "touchend", "mousedown", "mouseup"].forEach(evt => {
+  document.querySelector(".qcenter").addEventListener(evt, (e) => e.stopPropagation());
+});
+
+// ---- Wake Lock(画面オフ防止) ----
+async function requestWakeLock() {
+  if (!("wakeLock" in navigator)) {
+    alert("このブラウザは画面オフ防止に対応していません。設定アプリで画面ロックの時間を長めにしてください。");
+    return;
+  }
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeOn = true;
+    wakeLock.addEventListener("release", () => {
+      wakeOn = false;
+      updateWakeBtn();
+    });
+  } catch (e) {
+    wakeOn = false;
+    alert("画面オフ防止を開始できませんでした。バッテリー設定によりブロックされる場合があります。");
+  }
+  updateWakeBtn();
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  wakeOn = false;
+  updateWakeBtn();
+}
+function updateWakeBtn() {
+  const b = document.getElementById("qWakeBtn");
+  if (wakeOn) { b.classList.add("on"); b.textContent = "画面オフ防止: ON"; }
+  else { b.classList.remove("on"); b.textContent = "画面オフ防止: OFF"; }
+}
+document.getElementById("qWakeBtn").onclick = (ev) => {
+  ev.stopPropagation();
+  if (wakeOn) releaseWakeLock(); else requestWakeLock();
+};
+// バックグラウンドから復帰した際にWake Lockが切れている場合があるので再取得
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && mode === "quick" && wakeOn && !wakeLock) {
+    requestWakeLock();
+  }
+});
+
+// 1秒ごとにかんたんモードの計時表示も更新
+setInterval(() => { if (mode === "quick") renderQuick(); }, 1000);
+
+// ---- 初期化 ----
+loadMode();
+applyMode();
+
 </script>
 </body>
 </html>
