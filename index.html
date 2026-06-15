@@ -55,6 +55,8 @@
   .qbtn { border: none; background: transparent; color: var(--dim);
           font-weight: 800; font-size: 13px; padding: 0 10px; }
   .qbtn.active { background: var(--text); color: var(--bg); }
+  /* ★v6: 試合終了ボタンの確認状態(赤背景で誤タップ防止を明示) */
+  .qbtn.endconfirm { background: var(--danger); color: #fff; }
 
   .board { display: flex; gap: 8px; }
   .teamcard {
@@ -98,6 +100,8 @@
     min-width: 52px; min-height: 44px; border-radius: 10px;
     font-weight: 900; font-size: 17px;
   }
+  /* ★v6: ピリオド変更チップ(選手チップと見た目は同系統だが別クラス) */
+  .pchip { border-radius: 10px; font-weight: 900; }
   .t0chip { border: 1px solid rgba(255,178,46,.4); background: rgba(255,178,46,.1); color: var(--home); }
   .t1chip { border: 1px solid rgba(91,200,245,.4); background: rgba(91,200,245,.1); color: var(--away); }
   .t0chip.sel { background: var(--home); color: var(--bg); }
@@ -110,6 +114,8 @@
   .small.warn { color: var(--danger); border-color: rgba(229,96,76,.4); }
   /* ★v5修正: 「もう一度で削除」は新しい試合と同じ赤背景で危険度を示す */
   .small.confirm { background: var(--danger); color: #fff; border-color: transparent; }
+  /* ★v6: 投稿どき(節目)を検知したときの📣ボタン強調 */
+  .small.moment { background: var(--home); color: #1A1205; border-color: transparent; }
 
   .oprow { display: flex; gap: 8px; margin-top: 10px; }
   #undoBtn {
@@ -173,6 +179,22 @@
             font-variant-numeric: tabular-nums; }
   .footer { text-align: center; margin-top: 12px; font-size: 11px; color: var(--dim); }
   .hidden { display: none; }
+
+  /* ★v6: コピー完了などを知らせる小さな通知 */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--text); color: var(--bg); font-size: 13px; font-weight: 800;
+    padding: 10px 18px; border-radius: 999px; z-index: 100; opacity: 0;
+    transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ★v6: ログ行のコピーボタン */
+  .lcopy {
+    margin-left: 6px; border: 1px solid var(--line); background: transparent;
+    color: var(--dim); border-radius: 6px; font-size: 11px; font-weight: 700;
+    padding: 3px 7px; cursor: pointer; flex-shrink: 0;
+  }
 
   /* ============================================================
      ★v5: かんたんモード(quick mode)
@@ -282,6 +304,9 @@
   <button id="settingsToggle" class="small">▼ 設定(背番号・クリップ)</button>
   <button id="boxToggle" class="small">▼ 選手別集計</button>
 </div>
+<div class="toggles">
+  <button id="liveCopyBtn" class="small" style="flex:1">📣 実況素材をコピー</button>
+</div>
 
 <div id="settingsPanel" class="panelbox hidden">
   <div class="rlabel t0" id="rlabel0"></div>
@@ -296,6 +321,19 @@
   <div class="clipnote">
     普段は使いません。RECの押し忘れや誤タップで、アプリの番号と実際の動画ファイル数が
     ズレたときだけ、ここで合わせ直します(ログのC番号=SDカード内の何本目か、を守るため)。
+  </div>
+  <!-- ★v6: データのバックアップ(書き出し/読み込み) -->
+  <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
+    <div style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">データのバックアップ</div>
+    <div style="display:flex;gap:8px">
+      <button class="small" id="backupExportBtn" style="flex:1;min-height:40px">この試合を書き出す</button>
+      <button class="small" id="backupImportBtn" style="flex:1;min-height:40px">試合を読み込む</button>
+    </div>
+    <input type="file" id="backupFileInput" accept=".json,application/json" style="display:none">
+    <div class="clipnote">
+      書き出すと試合データを1つのファイルに保存できます(端末の引っ越しや、iPhoneで記録→Macで編集の受け渡しにも)。
+      読み込むと今の記録に上書きされます。
+    </div>
   </div>
 </div>
 
@@ -319,7 +357,7 @@
 //   window.storage の代わりに → localStorage(Web標準)
 // ============================================================
 
-const QUARTERS = ["Q1", "Q2", "Q3", "Q4", "OT"];
+const QUARTERS = ["1Q", "2Q", "3Q", "4Q", "OT"]; // 日本のバスケ表記(数字が前)
 const STORAGE_KEY = "bball_game_v2";
 
 // ---- 状態(アプリが覚えておくデータ) ----
@@ -340,6 +378,9 @@ let lastEditedId = null;  // ★v5修正: 直前に編集した行(パネルを�
 let deleteConfirmId = null; // ★v5: 削除の二度押し確認対象のイベントID
 let deleteConfirmTimer = null;
 let deleteConfirmArmedAt = 0; // ★v5修正: 削除確認になった時刻(誤連打防止)
+let gameEndConfirm = false; // ★v6: 試合終了ボタンの二段階確認
+let gameEndTimer = null;
+let gameEnded = false; // ★v6: 試合終了状態(ハイライトを終了ボタンに移す。記録は続けられる)
 let confirming = null;    // "stop" / "reset" / null
 let confirmTimer = null;
 
@@ -362,6 +403,9 @@ function load() {
         clipNo: d.clipNo ?? 0,
         roster: d.roster ?? ["", ""],
       };
+      // ★v6: 旧表記(Q1〜Q4)を新表記(1Q〜4Q)へ変換
+      const qFix = { "Q1": "1Q", "Q2": "2Q", "Q3": "3Q", "Q4": "4Q" };
+      state.events.forEach(e => { if (qFix[e.q]) e.q = qFix[e.q]; });
     }
   } catch (e) { /* 初回起動は正常 */ }
 }
@@ -372,6 +416,26 @@ function fmtElapsed(sec) {
   const m = Math.floor(sec / 60), s = sec % 60;
   return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
+
+// ★v6: 各イベント時点の途中経過スコアを「毎回計算」する。
+//   イベントを焼き付け値に頼らず古い順に積み上げるので、
+//   後から未確定の確定・種別変更・削除をしても、全行のスコアが常に正しくなる。
+//   未確定の得点(pts==null)は加算0として扱い、確定後に自動反映される。
+//   戻り値: { イベントID: "45-40" } のマップ
+function computeScoreLines() {
+  const map = {};
+  let h = 0, a = 0;
+  // state.eventsは新しい順なので、古い順に見るため逆順でたどる
+  for (let i = state.events.length - 1; i >= 0; i--) {
+    const e = state.events[i];
+    if (e.type === "score" && e.pts != null) {
+      if (e.team === 0) h += e.pts; else a += e.pts;
+    }
+    map[e.id] = h + "-" + a;
+  }
+  return map;
+}
+
 function esc(s) { // HTMLに文字列を埋め込むときの安全化
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -381,8 +445,210 @@ function rosterList(i) {
 }
 function accentClass(i) { return i === 0 ? "t0" : "t1"; }
 
-// ---- 二度押し確認 ----
-let confirmArmedAt = 0; // ★v5修正: 確認状態になった時刻(直後の誤連打を無視するため)
+// ============================================================
+// ★v6: クリップボードへのコピー(編集用マーカー名・実況素材の出力口)
+//   将来AI連携を足すときも、ここで作る「素材文字列」を差し替えるだけで済む。
+// ============================================================
+function copyText(text) {
+  // navigator.clipboardが使える環境(httpsのGitHub Pages等)はそれを使う。
+  // 使えない場合は旧来のexecCommandで代替する。
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast("コピーしました")).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); showToast("コピーしました"); }
+  catch (e) { showToast("コピーできませんでした"); }
+  document.body.removeChild(ta);
+}
+let toastTimer = null;
+function showToast(msg) {
+  let t = document.getElementById("toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "toast";
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 1500);
+}
+
+// ★v6: イベントの「何が起きたか」の部分(2P, 3P, foul など)。両方の出力で共通。
+function eventWhatText(e) {
+  if (e.type === "foul") return "foul";
+  if (e.pts == null) return "得点";
+  return e.pts + "P";
+}
+
+// ★v6: マーカー名用テキスト(編集のチャプター用・簡潔重視)
+//   自チーム(番号あり)は "No.4 3P"、相手(番号なし)はチーム名 "都立戸山 2P"。
+function eventToMarkerText(e) {
+  const who = e.player ? "No." + e.player : (e.team === 0 ? state.teams[0].name : state.teams[1].name);
+  return who + " " + eventWhatText(e);
+}
+
+// ★v6: 実況投稿用テキスト(明確重視)
+//   常に「チーム名 + 番号(あれば)」。例: "中大杉並 #4 3P" / "都立戸山 2P"。
+function eventToLiveText(e) {
+  const teamName = e.team === 0 ? state.teams[0].name : state.teams[1].name;
+  const who = e.player ? teamName + " #" + e.player : teamName;
+  return who + " " + eventWhatText(e);
+}
+
+// ★v6: 現在の試合状況を「実況素材」テキストにする
+//   AIに渡しても、そのまま投稿してもよい中立的な素材。
+function buildLiveText() {
+  const h = state.teams[0];
+  const a = state.teams[1];
+  // 直近の得点イベント(最大3件)を新しい順に拾う
+  const recentScores = state.events
+    .filter(e => e.type === "score" && e.pts != null)
+    .slice(0, 3)
+    .map(e => eventToLiveText(e));
+  let text = "【" + QUARTERS[state.quarter] + "】" +
+    h.name + " " + h.score + " - " + a.score + " " + a.name;
+  if (recentScores.length) {
+    text += "\n直近: " + recentScores.join(" / ");
+  }
+  return text;
+}
+
+// ============================================================
+// ★v6: 節目(投稿どき)の検知
+//   今は「逆転/同点」「クォーター終了」の2種類。将来ここに追加していく。
+//   アプリ内のデータだけで判定でき、AIもサーバーも不要。
+//   将来は、ここで返す「節目の文脈」をAIに渡して実況文を生成する入口になる。
+// ============================================================
+function detectMoment() {
+  if (state.events.length === 0) return null;
+
+  // --- クォーター終了の検知 ---
+  // 最新イベントのピリオドより現在のピリオドが先に進んでいたら、
+  // 直前のピリオドが終わったとみなす。
+  const latest = state.events[0];
+  const latestQIdx = QUARTERS.indexOf(latest.q);
+  if (state.quarter > latestQIdx && latestQIdx >= 0) {
+    return {
+      kind: "quarter_end",
+      label: QUARTERS[latestQIdx] + "終了",
+      endedQ: QUARTERS[latestQIdx], // ★v6: 振り返り対象のクォーター
+    };
+  }
+
+  // --- 逆転/同点の検知 ---
+  // 最新の「確定した得点」イベントについて、その得点の前後でリード状況がどう変わったか見る。
+  const scoreLines = computeScoreLines();
+  // 確定得点イベントを新しい順に並べ、最新の確定得点を探す
+  const scoreEvents = state.events.filter(e => e.type === "score" && e.pts != null);
+  if (scoreEvents.length > 0) {
+    const last = scoreEvents[0];
+    const [hAfter, aAfter] = scoreLines[last.id].split("-").map(Number);
+    // この得点の「前」のスコア = 後 から この得点分を引く
+    let hBefore = hAfter, aBefore = aAfter;
+    if (last.team === 0) hBefore -= last.pts; else aBefore -= last.pts;
+    const diffBefore = hBefore - aBefore;
+    const diffAfter = hAfter - aAfter;
+    // 同点になった
+    if (diffAfter === 0 && diffBefore !== 0) {
+      return { kind: "tie", label: "同点!", scoreText: hAfter + "-" + aAfter };
+    }
+    // リードが入れ替わった(符号が反転 = 逆転)
+    if (diffBefore !== 0 && diffAfter !== 0 && Math.sign(diffBefore) !== Math.sign(diffAfter)) {
+      const leader = diffAfter > 0 ? state.teams[0].name : state.teams[1].name;
+      return { kind: "lead_change", label: leader + "が逆転!", scoreText: hAfter + "-" + aAfter };
+    }
+  }
+  return null;
+}
+
+// ★v6: 指定クォーターの振り返りテキストを作る(クォーター終了の節目で使う)
+function buildQuarterSummary(q) {
+  const evs = state.events.filter(e => e.q === q);
+  // そのクォーターの両チーム得点
+  let qh = 0, qa = 0;
+  const scorers = [0, 1].map(() => ({})); // チームごと { 番号: 得点 }
+  for (const e of evs) {
+    if (e.type !== "score" || e.pts == null) continue;
+    if (e.team === 0) qh += e.pts; else qa += e.pts;
+    if (e.player) {
+      const t = scorers[e.team];
+      t[e.player] = (t[e.player] || 0) + e.pts;
+    }
+  }
+  const h = state.teams[0], a = state.teams[1];
+  // 終了時点の累計スコア(画面の合計をそのまま使う)
+  let text = h.name + " " + h.score + " - " + a.score + " " + a.name;
+  text += "\n" + q + ": " + h.name + " " + qh + "点 / " + a.name + " " + qa + "点";
+  // 得点者(背番号が登録されているチームのみ・得点の多い順)
+  [0, 1].forEach(i => {
+    const entries = Object.entries(scorers[i]).sort((x, y) => y[1] - x[1]);
+    if (entries.length) {
+      const teamName = state.teams[i].name;
+      text += "\n" + teamName + "得点者: " + entries.map(([n, p]) => "#" + n + " " + p + "点").join(", ");
+    }
+  });
+  return text;
+}
+
+// ★v6: 試合終了サマリー(最終スコア+試合全体の得点者ランキング)
+function buildGameEndText() {
+  const h = state.teams[0], a = state.teams[1];
+  // 勝敗を判定
+  let result;
+  if (h.score > a.score) result = h.name + "の勝利";
+  else if (a.score > h.score) result = a.name + "の勝利";
+  else result = "引き分け";
+  let text = "【試合終了】\n" + h.name + " " + h.score + " - " + a.score + " " + a.name + "(" + result + ")";
+
+  // ★v6: クォーター別得点(試合の流れが分かる)。記録のあるクォーターだけ出す。
+  const qParts = [];
+  QUARTERS.forEach(q => {
+    let qh = 0, qa = 0, hasEvent = false;
+    for (const e of state.events) {
+      if (e.q !== q) continue;
+      hasEvent = true;
+      if (e.type === "score" && e.pts != null) {
+        if (e.team === 0) qh += e.pts; else qa += e.pts;
+      }
+    }
+    if (hasEvent) qParts.push(q + " " + qh + "-" + qa);
+  });
+  if (qParts.length) text += "\n" + qParts.join("\n");
+
+  // 試合全体の得点者(背番号が登録されているチームのみ・得点の多い順)
+  const scorers = [{}, {}];
+  for (const e of state.events) {
+    if (e.type !== "score" || e.pts == null || !e.player) continue;
+    scorers[e.team][e.player] = (scorers[e.team][e.player] || 0) + e.pts;
+  }
+  [0, 1].forEach(i => {
+    const entries = Object.entries(scorers[i]).sort((x, y) => y[1] - x[1]);
+    if (entries.length) {
+      text += "\n" + state.teams[i].name + "得点者: " + entries.map(([n, p]) => "#" + n + " " + p + "点").join(", ");
+    }
+  });
+  return text;
+}
+
+// 節目を含んだ実況素材テキストを作る
+function buildMomentText(moment) {
+  if (!moment) return buildLiveText();
+  // ★v6: クォーター終了のときは、そのクォーターの振り返りを出す
+  if (moment.kind === "quarter_end") {
+    return "【" + moment.label + "】\n" + buildQuarterSummary(moment.endedQ);
+  }
+  // それ以外(逆転・同点)は現在の状況+直近の流れ
+  return "【" + moment.label + "】\n" + buildLiveText();
+}
 const CONFIRM_COOLDOWN = 350; // ms。この時間内の2回目クリックはダブルタップとみなして無視
 
 function armConfirm(kind) {
@@ -413,6 +679,7 @@ function makeEvent(teamIdx, type, pts, teamsAfter) {
 }
 
 function addPoints(teamIdx, pts) {
+  gameEnded = false; // ★v6: 終了後に記録したら継続状態に戻す
   state.teams[teamIdx].score += pts;
   const e = makeEvent(teamIdx, "score", pts, state.teams);
   state.events.unshift(e);
@@ -421,6 +688,7 @@ function addPoints(teamIdx, pts) {
 }
 
 function addFoul(teamIdx) {
+  gameEnded = false; // ★v6: 終了後に記録したら継続状態に戻す
   state.teams[teamIdx].fouls += 1;
   const e = makeEvent(teamIdx, "foul", 0, state.teams);
   state.events.unshift(e);
@@ -433,6 +701,7 @@ function addFoul(teamIdx) {
 //     → detailモードで点数を確定したとき addPoints と同じ加算処理を行う
 //   ファウル(quickFoul): 既存のaddFoulと同じ(数に曖昧さがないため即時加算)
 function addQuickScore(teamIdx) {
+  gameEnded = false; // ★v6: 終了後に記録したら継続状態に戻す
   const e = makeEvent(teamIdx, "score", null, state.teams);
   e.quick = true; // 未確定の目印(detailモードのpendingで強調表示に使う)
   state.events.unshift(e);
@@ -567,6 +836,7 @@ function handleResetButton() {
   state.clipNo = 0;
   pendingId = null;
   changeTypeOpen = null;
+  gameEnded = false; // ★v6: 試合終了状態も解除
   disarmConfirm();
   save(); renderAll();
 }
@@ -574,6 +844,7 @@ function handleResetButton() {
 // ---- CSV書き出し ----
 function exportCSV() {
   if (state.events.length === 0) return;
+  const scoreLines = computeScoreLines(); // ★v6: 計算した正しい途中経過スコア
   const header = "クリップ,経過時間,時刻,ピリオド,チーム,選手,種別,得点,スコア";
   const rows = [...state.events].reverse().map(e => [
     e.clip ?? "",
@@ -584,7 +855,7 @@ function exportCSV() {
     e.player ? "#" + e.player : "",
     e.type === "score" ? "得点" : "ファウル",
     e.type === "score" ? (e.pts == null ? "未確定" : "+" + e.pts) : "",
-    e.scoreLine,
+    scoreLines[e.id],
   ].join(","));
   const blob = new Blob(["\uFEFF" + [header, ...rows].join("\n")],
     { type: "text/csv;charset=utf-8" });
@@ -596,7 +867,64 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-// ---- 選手別集計 ----
+// ============================================================
+// ★v6: JSONバックアップ(アプリの状態まるごと保存・復元)
+//   CSVは分析用で読み戻せないため、復元可能な形式を別に用意する。
+//   端末をまたいだ受け渡し(iPhoneで記録→Macで編集)にも使える。
+// ============================================================
+function exportBackup() {
+  // バージョン情報を付けておくと、将来データ構造が変わっても対応しやすい
+  const backup = { app: "score-tracker", version: 6, savedAt: new Date().toISOString(), state };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  // ファイル名に対戦カードと日付を入れて、後で見分けられるようにする
+  const tag = (state.teams[0].name + "_vs_" + state.teams[1].name).replace(/[^\w\u3040-\u30ff\u4e00-\u9fff-]/g, "");
+  a.href = url;
+  a.download = "score_backup_" + tag + "_" + new Date().toISOString().slice(0, 10) + ".json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// 読み込み: ファイル選択 → 確認 → stateを丸ごと復元
+function importBackup(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      // バックアップ形式(app:score-tracker)か、state単体か、両方を受け付ける
+      const loaded = data.state ? data.state : data;
+      if (!loaded || !Array.isArray(loaded.teams) || !Array.isArray(loaded.events)) {
+        alert("このファイルはスコアトラッカーのバックアップではないようです。");
+        return;
+      }
+      // 既存の一時状態をクリアしてから復元する
+      state = {
+        teams: loaded.teams,
+        quarter: loaded.quarter ?? 0,
+        events: loaded.events ?? [],
+        startAt: loaded.startAt ?? null,
+        clipNo: loaded.clipNo ?? 0,
+        roster: loaded.roster ?? ["", ""],
+      };
+      // ★v6: 旧表記(Q1〜Q4)を新表記(1Q〜4Q)へ変換して互換性を保つ
+      const qFix = { "Q1": "1Q", "Q2": "2Q", "Q3": "3Q", "Q4": "4Q" };
+      state.events.forEach(e => { if (qFix[e.q]) e.q = qFix[e.q]; });
+      pendingId = null; changeTypeOpen = null; lastEditedId = null;
+      save();
+      renderBoard(); // チームカードを作り直す(名前が変わるため)
+      renderAll();
+      // ロスター入力欄の表示も更新
+      ["roster0", "roster1"].forEach((id, i) => {
+        document.getElementById(id).value = state.roster[i];
+      });
+      alert("バックアップを読み込みました。");
+    } catch (e) {
+      alert("ファイルの読み込みに失敗しました。壊れているか、形式が違う可能性があります。");
+    }
+  };
+  reader.readAsText(file);
+}
 function boxScore(teamIdx) {
   const totals = {};
   for (const e of state.events) {
@@ -634,11 +962,38 @@ function renderQuarters() {
   w.innerHTML = "";
   QUARTERS.forEach((q, i) => {
     const b = document.createElement("button");
-    b.className = "qbtn" + (i === state.quarter ? " active" : "");
+    // ★v6: 試合終了中はピリオドのハイライトを外す(終了ボタンを光らせるため)
+    b.className = "qbtn" + (!gameEnded && i === state.quarter ? " active" : "");
     b.textContent = q;
-    b.onclick = () => { state.quarter = i; save(); renderQuarters(); };
+    b.onclick = () => {
+      state.quarter = i;
+      gameEndConfirm = false;
+      gameEnded = false; // ★v6: ピリオドを選んだら記録継続状態に戻る
+      save(); renderQuarters(); renderAll();
+    };
     w.appendChild(b);
   });
+  // ★v6: 試合終了ボタン(二段階確認。誤タップ防止のため削除と同じ方式)
+  const endBtn = document.createElement("button");
+  // 終了済みなら active(ハイライト)、確認中なら endconfirm(赤)
+  endBtn.className = "qbtn" + (gameEndConfirm ? " endconfirm" : (gameEnded ? " active" : ""));
+  endBtn.textContent = gameEndConfirm ? "もう一度で終了" : "終了";
+  endBtn.onclick = () => {
+    if (!gameEndConfirm) {
+      gameEndConfirm = true;
+      clearTimeout(gameEndTimer);
+      gameEndTimer = setTimeout(() => { gameEndConfirm = false; renderQuarters(); }, 4000);
+      renderQuarters();
+    } else {
+      gameEndConfirm = false;
+      clearTimeout(gameEndTimer);
+      if (state.events.length === 0) { showToast("まだ記録がありません"); return; }
+      gameEnded = true; // ★v6: 終了状態に移行(ハイライトが終了ボタンに移る)
+      copyText(buildGameEndText());
+      renderQuarters();
+    }
+  };
+  w.appendChild(endBtn);
 }
 
 function renderBoard() {
@@ -764,6 +1119,15 @@ function renderPending() {
     '<button class="small warn" data-act="changetype">種別を変更(現在: ' + what + ')</button>' +
     '<button class="' + delCls + '" data-act="delete">' + delLabel + '</button>' +
     '</div>';
+  // ★v6: クォーターの修正(押し間違いや切り替え忘れの訂正用)
+  //   ★v6修正: 選手チップ(.chip)と同じクラスにすると assignPlayer のハンドラに
+  //   巻き込まれてしまうため、別クラス(pchip)にする。
+  inner += '<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--dim);margin-right:6px">ピリオド:</span>';
+  QUARTERS.forEach(q => {
+    const sel = e.q === q ? " sel" : "";
+    inner += '<button class="pchip ' + ac + 'chip' + sel + '" data-q="' + q + '" style="min-width:40px;min-height:34px;font-size:13px;margin-right:4px">' + q + '</button>';
+  });
+  inner += '</div>';
   if (nums.length === 0) {
     inner += '<div style="font-size:12px;color:var(--dim)">' + esc(e.teamName) +
       " の背番号が未登録です。「▼ 設定」から登録してください。</div>";
@@ -790,6 +1154,14 @@ function renderPending() {
   // ★v5: 削除(二度押し確認。4秒で自動的に確認状態が解除される)
   const deleteBtn = area.querySelector('[data-act="delete"]');
   if (deleteBtn) deleteBtn.onclick = () => handleDeleteClick(e.id);
+
+  // ★v6: クォーターの修正
+  area.querySelectorAll("[data-q]").forEach(b =>
+    b.onclick = () => {
+      e.q = b.dataset.q;
+      lastEditedId = e.id;
+      save(); renderAll();
+    });
 
   area.querySelectorAll(".chip").forEach(b =>
     b.onclick = () => assignPlayer(b.dataset.num));
@@ -848,6 +1220,7 @@ function renderLog() {
     return;
   }
   body.innerHTML = "";
+  const scoreLines = computeScoreLines(); // ★v6: 毎回計算した正しい途中経過スコア
   state.events.forEach(e => {
     const row = document.createElement("div");
     const ac = accentClass(e.team);
@@ -870,15 +1243,33 @@ function renderLog() {
       '<span class="lteam ' + ac + '">' + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + "</span>" +
       '<span class="lpts"' + (unresolved ? ' style="color:var(--danger)"' : '') + '>' +
         (e.type === "score" ? (unresolved ? "未確定" : "+" + e.pts) : "ファウル") + "</span>" +
-      '<span class="lscore">' + e.scoreLine + "</span>";
+      '<span class="lscore">' + scoreLines[e.id] + "</span>" +
+      '<button class="lcopy" data-act="copy" title="マーカー名をコピー">⎘</button>';
     row.onclick = () => { pendingId = e.id; changeTypeOpen = null; lastEditedId = null; deleteConfirmId = null; clearTimeout(deleteConfirmTimer); renderPending(); renderLog(); };
+    // ★v6: コピーボタンは行タップ(選手修正)と干渉しないよう伝播を止める
+    const copyBtn = row.querySelector('[data-act="copy"]');
+    if (copyBtn) copyBtn.onclick = (ev) => { ev.stopPropagation(); copyText(eventToMarkerText(e)); };
     body.appendChild(row);
   });
 }
 
 function renderAll() {
   renderClock(); renderQuarters(); renderScores(); renderPending();
-  renderOps(); renderSettings(); renderBox(); renderLog();
+  renderOps(); renderSettings(); renderBox(); renderLog(); renderLiveButton();
+}
+
+// ★v6: 📣ボタンの表示を、検知した節目に応じて変える
+function renderLiveButton() {
+  const btn = document.getElementById("liveCopyBtn");
+  if (!btn) return;
+  const moment = detectMoment();
+  if (moment) {
+    btn.textContent = "📣 投稿どき: " + moment.label;
+    btn.classList.add("moment"); // 強調表示用
+  } else {
+    btn.textContent = "📣 実況素材をコピー";
+    btn.classList.remove("moment");
+  }
 }
 
 // ============================================================
@@ -899,6 +1290,13 @@ renderAll();
 document.getElementById("clockBtn").onclick = handleClockButton;
 document.getElementById("undoBtn").onclick = undo;
 document.getElementById("csvBtn").onclick = exportCSV;
+// ★v6: 実況素材をコピー(Xへの投稿や、Claudeに渡して実況文化する素材)
+//   節目(逆転・同点・クォーター終了)が検知されていれば、その見出しを含めてコピーする。
+document.getElementById("liveCopyBtn").onclick = () => {
+  if (state.events.length === 0) { showToast("まだ記録がありません"); return; }
+  const moment = detectMoment();
+  copyText(buildMomentText(moment));
+};
 document.getElementById("resetBtn").onclick = handleResetButton;
 document.getElementById("clipMinus").onclick = () => {
   state.clipNo = Math.max(0, state.clipNo - 1); save(); renderSettings(); renderClock();
@@ -916,6 +1314,20 @@ document.getElementById("boxToggle").onclick = function () {
   p.classList.toggle("hidden");
   this.textContent = p.classList.contains("hidden") ? "▼ 選手別集計" : "▲ 選手別集計を閉じる";
   renderBox();
+};
+
+// ★v6: バックアップの書き出し/読み込み
+document.getElementById("backupExportBtn").onclick = exportBackup;document.getElementById("backupImportBtn").onclick = () => {
+  // 既に記録がある場合は、上書きになることを確認してから読み込む
+  if (state.events.length > 0) {
+    if (!confirm("現在の記録に上書きされます。先に「この試合を書き出す」で保存しておくことをおすすめします。読み込みを続けますか?")) return;
+  }
+  document.getElementById("backupFileInput").click();
+};
+document.getElementById("backupFileInput").onchange = (ev) => {
+  const file = ev.target.files[0];
+  if (file) importBackup(file);
+  ev.target.value = ""; // 同じファイルを連続で選べるようにリセット
 };
 
 // 1秒ごとに計時表示を更新
