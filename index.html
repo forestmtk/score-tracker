@@ -96,6 +96,19 @@
   .pendbox.t1 { border: 1px solid rgba(91,200,245,.4); }
   .pendlabel { font-size: 12px; color: var(--dim); margin-bottom: 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* ★v6: 横向きの詳細モードでは、選手選択パネルを画面下部に固定して
+     スクロールなしで見える・押せるようにする(撮影中の実況入力用)。
+     かんたんモード(body.quick)は専用の番号待ち帯があるので対象外。 */
+  @media (orientation: landscape) {
+    body:not(.quick) #pendingArea:not(:empty) {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+      margin: 0; padding: 8px 12px;
+      background: rgba(14,17,22,.97); border-top: 1px solid var(--line);
+      max-height: 55vh; overflow-y: auto;
+      box-shadow: 0 -8px 24px rgba(0,0,0,.5);
+    }
+  }
   .chip {
     min-width: 52px; min-height: 44px; border-radius: 10px;
     font-weight: 900; font-size: 17px;
@@ -252,6 +265,22 @@
     position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
     font-size: 12px; font-weight: 800; color: var(--danger); pointer-events: none;
   }
+  /* ★v6: かんたんモードの選手番号待ちの帯(画面下部・全幅) */
+  #qPlayerBar {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 42;
+    background: rgba(14,17,22,.95); border-top: 1px solid var(--line);
+    padding: 8px 10px; display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap; pointer-events: auto;
+  }
+  #qPlayerBar.hidden { display: none; }
+  #qPlayerBarLabel { font-size: 13px; font-weight: 800; color: var(--dim); flex-shrink: 0; }
+  #qPlayerBarChips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+  #qPlayerBarChips .pbchip {
+    min-width: 48px; min-height: 44px; border-radius: 10px;
+    font-weight: 900; font-size: 17px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text);
+  }
+  #qPlayerBarChips .pbchip.skip { color: var(--dim); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -277,6 +306,11 @@
     <button class="qclockbtn" id="qClockBtn"></button>
     <button class="qundobtn" id="qUndoBtn">↩ 直前を取り消す</button>
     <button class="qwakebtn" id="qWakeBtn">画面オフ防止: OFF</button>
+  </div>
+  <!-- ★v6: 選手番号待ちの帯(得点/ファウルの直後に出る。次のアクションまで残る) -->
+  <div id="qPlayerBar" class="hidden">
+    <span id="qPlayerBarLabel"></span>
+    <div id="qPlayerBarChips"></div>
   </div>
 </div>
 
@@ -381,6 +415,7 @@ let deleteConfirmArmedAt = 0; // ★v5修正: 削除確認になった時刻(誤
 let gameEndConfirm = false; // ★v6: 試合終了ボタンの二段階確認
 let gameEndTimer = null;
 let gameEnded = false; // ★v6: 試合終了状態(ハイライトを終了ボタンに移す。記録は続けられる)
+let quickWaitEventId = null; // ★v6: かんたんモードの選手番号待ち対象のイベントID
 let confirming = null;    // "stop" / "reset" / null
 let confirmTimer = null;
 
@@ -706,9 +741,12 @@ function addQuickScore(teamIdx) {
   e.quick = true; // 未確定の目印(detailモードのpendingで強調表示に使う)
   state.events.unshift(e);
   save();
+  return e; // ★v6: 番号待ち用に作成イベントを返す
 }
 function addQuickFoul(teamIdx) {
+  // addFoulは新しいイベントを先頭に積むので、それを取得して返す
   addFoul(teamIdx);
+  return state.events[0]; // ★v6: 番号待ち用に作成イベントを返す
 }
 // ★v5修正: イベントの種別・点数を変更する汎用関数。
 //   未確定(quick)からの確定、確定済みの記録のやり直し、どちらにも対応。
@@ -837,6 +875,7 @@ function handleResetButton() {
   pendingId = null;
   changeTypeOpen = null;
   gameEnded = false; // ★v6: 試合終了状態も解除
+  quickWaitEventId = null; // ★v6: 番号待ちもクリア
   disarmConfirm();
   save(); renderAll();
 }
@@ -1433,6 +1472,7 @@ function renderQuick() {
     clockBtn.textContent = "▶ 計時開始";
   }
   document.getElementById("qUndoBtn").style.visibility = state.events.length ? "visible" : "hidden";
+  renderQuickPlayerBar(); // ★v6: 番号待ち帯も更新
 }
 
 // ---- かんたんモードのタップ/長押し ----
@@ -1440,6 +1480,48 @@ function flashZone(i) {
   const z = document.getElementById("qzone" + i);
   z.classList.add("flash");
   setTimeout(() => z.classList.remove("flash"), 120);
+}
+
+// ★v6: かんたんモードの選手番号待ち
+//   得点/ファウルの直後に、そのチームの番号ボタンを画面下部に出す。
+//   「次のアクションまで残る」方式: 次の得点/ファウルや番号選択があるまで表示。
+function setQuickPlayerWait(e, teamIdx) {
+  // ロスター未登録なら番号待ちは出さない(従来どおりワンタップ即記録)
+  if (rosterList(teamIdx).length === 0) { quickWaitEventId = null; renderQuickPlayerBar(); return; }
+  quickWaitEventId = e.id;
+  renderQuickPlayerBar();
+}
+function renderQuickPlayerBar() {
+  const bar = document.getElementById("qPlayerBar");
+  if (!quickWaitEventId) { bar.classList.add("hidden"); return; }
+  const e = state.events.find(ev => ev.id === quickWaitEventId);
+  if (!e) { bar.classList.add("hidden"); return; }
+  const what = e.type === "foul" ? "ファウル" : "得点";
+  document.getElementById("qPlayerBarLabel").textContent =
+    (e.team === 0 ? state.teams[0].name : state.teams[1].name) + "の" + what + " 誰?";
+  const chips = document.getElementById("qPlayerBarChips");
+  chips.innerHTML = "";
+  rosterList(e.team).forEach(n => {
+    const b = document.createElement("button");
+    b.className = "pbchip" + (e.player === n ? " sel" : "");
+    b.textContent = "#" + n;
+    if (e.player === n) { b.style.background = e.team === 0 ? "var(--home)" : "var(--away)"; b.style.color = "var(--bg)"; }
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      e.player = n;
+      save();
+      renderQuickPlayerBar(); // 選択を反映(ハイライト)
+      renderQuick();
+    };
+    chips.appendChild(b);
+  });
+  // 「あとで」= 番号なしで確定して帯を閉じる
+  const skip = document.createElement("button");
+  skip.className = "pbchip skip";
+  skip.textContent = "あとで";
+  skip.onclick = (ev) => { ev.stopPropagation(); quickWaitEventId = null; renderQuickPlayerBar(); };
+  chips.appendChild(skip);
+  bar.classList.remove("hidden");
 }
 
 [0, 1].forEach(i => {
@@ -1453,8 +1535,9 @@ function flashZone(i) {
     holdFired = false;
     holdTimer = setTimeout(() => {
       holdFired = true;
-      addQuickFoul(i);
+      const e = addQuickFoul(i);
       flashZone(i);
+      setQuickPlayerWait(e, i); // ★v6: 番号待ち
       renderQuick();
     }, HOLD_MS);
   };
@@ -1464,8 +1547,9 @@ function flashZone(i) {
     ev.preventDefault();
     clearTimeout(holdTimer);
     if (!holdFired) {
-      addQuickScore(i);
+      const e = addQuickScore(i);
       flashZone(i);
+      setQuickPlayerWait(e, i); // ★v6: 番号待ち
       renderQuick();
     }
   };
@@ -1501,6 +1585,8 @@ document.getElementById("qUndoBtn").onclick = (ev) => {
 //   modeToggleと同様に、qcenter全体でイベント伝播を止める。
 ["touchstart", "touchend", "mousedown", "mouseup"].forEach(evt => {
   document.querySelector(".qcenter").addEventListener(evt, (e) => e.stopPropagation());
+  // ★v6: 番号待ち帯も、背後のqzoneへの伝播を止める
+  document.getElementById("qPlayerBar").addEventListener(evt, (e) => e.stopPropagation());
 });
 
 // ---- Wake Lock(画面オフ防止) ----
