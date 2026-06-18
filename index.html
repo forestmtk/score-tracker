@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" id="htmlRoot">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -205,6 +205,14 @@
             font-variant-numeric: tabular-nums; }
   .footer { text-align: center; margin-top: 12px; font-size: 11px; color: var(--dim); }
   .hidden { display: none; }
+  /* ★v8: 言語切替ボタン */
+  #langBtn {
+    position: fixed; top: 8px; left: 8px; z-index: 51;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--dim); font-size: 11px; font-weight: 700; padding: 6px 10px;
+    opacity: .85;
+  }
+  body.quick #langBtn { top: 10px; left: 10px; font-size: 13px; padding: 10px 16px; opacity: 1; }
 
   /* ★v6: コピー完了などを知らせる小さな通知 */
   #toast {
@@ -299,26 +307,27 @@
 <body>
 
 <button class="modetoggle" id="modeToggle">▦ かんたん</button>
+<button id="langBtn">EN</button>
 
 <div id="quickScreen" class="hidden">
   <div class="qzone t0" id="qzone0">
     <div class="qname" id="qzname0"></div>
     <div class="qscore" id="qzscore0">0</div>
-    <div class="qscorelabel">未確定の記録</div>
+    <div class="qscorelabel" id="qScoreLabel0"></div>
     <div class="qcount" id="qzcount0"></div>
-    <div class="qhintfixed">タップ=得点 ・ 長押し=ファウル</div>
+    <div class="qhintfixed" id="qHint0"></div>
   </div>
   <div class="qzone t1" id="qzone1">
     <div class="qname" id="qzname1"></div>
     <div class="qscore" id="qzscore1">0</div>
-    <div class="qscorelabel">未確定の記録</div>
+    <div class="qscorelabel" id="qScoreLabel1"></div>
     <div class="qcount" id="qzcount1"></div>
-    <div class="qhintfixed">タップ=得点 ・ 長押し=ファウル</div>
+    <div class="qhintfixed" id="qHint1"></div>
   </div>
   <div class="qcenter">
     <button class="qclockbtn" id="qClockBtn"></button>
-    <button class="qundobtn" id="qUndoBtn">↩ 直前を取り消す</button>
-    <button class="qwakebtn" id="qWakeBtn">画面オフ防止: OFF</button>
+    <button class="qundobtn" id="qUndoBtn"></button>
+    <button class="qwakebtn" id="qWakeBtn"></button>
   </div>
   <!-- ★v6: 選手番号待ちの帯(得点/ファウルの直後に出る。次のアクションまで残る) -->
   <div id="qPlayerBar" class="hidden">
@@ -333,7 +342,7 @@
 </div>
 
 <div class="toprow">
-  <button id="clockBtn" class="start">▶ 計時開始(RECと同時に)</button>
+  <button id="clockBtn" class="start"></button>
   <div class="qwrap" id="qwrap"></div>
 </div>
 
@@ -342,29 +351,38 @@
 <div id="pendingArea"></div>
 
 <div class="oprow">
-  <button id="undoBtn" disabled>↩ 1つ取り消す</button>
-  <button id="csvBtn" disabled>CSV保存</button>
-  <button id="resetBtn" class="small">新しい試合</button>
+  <button id="undoBtn" disabled></button>
+  <button id="csvBtn" disabled></button>
+  <button id="resetBtn" class="small"></button>
+</div>
+
+<!-- ★v7: 撮影中によく使う実況系は、操作行の直下(スクロールせず届く位置)に置く -->
+<div class="toggles">
+  <button id="liveCopyBtn" class="small" style="flex:1"></button>
+  <button id="livePostBtn" class="small" style="flex:1"></button>
 </div>
 
 <div class="toggles">
-  <button id="settingsToggle" class="small">▼ 設定(背番号・クリップ)</button>
-  <button id="boxToggle" class="small">▼ 選手別集計</button>
+  <button id="settingsToggle" class="small"></button>
+  <button id="boxToggle" class="small"></button>
 </div>
 <div class="toggles">
-  <button id="momentsToggle" class="small" style="flex:1">▼ 節目の振り返り</button>
-</div>
-<div class="toggles">
-  <button id="liveCopyBtn" class="small" style="flex:1">📣 実況素材をコピー</button>
-  <button id="livePostBtn" class="small" style="flex:1">𝕏 で投稿</button>
+  <button id="momentsToggle" class="small" style="flex:1"></button>
 </div>
 
 <div id="settingsPanel" class="panelbox hidden">
   <!-- ★v7: クォーターの長さ(試合タイマー時間の推定に使う) -->
   <div style="margin-bottom:10px">
-    <div style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">クォーターの長さ</div>
+    <div id="qLenLabel" style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">クォーターの長さ</div>
     <div id="qLenWrap" style="display:flex;gap:6px"></div>
-    <div class="clipnote">試合タイマー時間(残り◯:◯)の推定に使います。ミニバス6分/練習・地域8分/通常10分/大人12分。</div>
+    <div id="qLenNote" class="clipnote">試合タイマー時間(残り◯:◯)の推定に使います。ミニバス6分/練習・地域8分/通常10分/大人12分。</div>
+  </div>
+  <!-- ★v7: 大会名・ハッシュタグ(X投稿に使う) -->
+  <div style="margin-bottom:10px">
+    <div id="postSettingsLabelEl" style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">X投稿用</div>
+    <input class="rinput" id="tournamentInput" placeholder="大会名(例: 令和7年度新人戦 第4支部大会)">
+    <input class="rinput" id="hashtagsInput" placeholder="ハッシュタグ(例: #新人戦 #中大杉並)">
+    <div id="postNoteEl" class="clipnote">投稿の先頭に大会名+対戦カード、末尾にハッシュタグが入ります。空欄なら省略されます。</div>
   </div>
   <div class="rlabel t0" id="rlabel0"></div>
   <input class="rinput" id="roster0" placeholder="未登録なら選手チップは出ません">
@@ -375,19 +393,19 @@
     <button class="small" id="clipMinus" style="min-width:44px;min-height:38px;font-size:16px">−</button>
     <button class="small" id="clipPlus" style="min-width:44px;min-height:38px;font-size:16px">＋</button>
   </div>
-  <div class="clipnote">
+  <div id="clipNoteEl" class="clipnote">
     普段は使いません。RECの押し忘れや誤タップで、アプリの番号と実際の動画ファイル数が
     ズレたときだけ、ここで合わせ直します(ログのC番号=SDカード内の何本目か、を守るため)。
   </div>
   <!-- ★v6: データのバックアップ(書き出し/読み込み) -->
   <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
-    <div style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">データのバックアップ</div>
+    <div id="backupLabelEl" style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">データのバックアップ</div>
     <div style="display:flex;gap:8px">
-      <button class="small" id="backupExportBtn" style="flex:1;min-height:40px">この試合を書き出す</button>
-      <button class="small" id="backupImportBtn" style="flex:1;min-height:40px">試合を読み込む</button>
+      <button class="small" id="backupExportBtn" style="flex:1;min-height:40px"></button>
+      <button class="small" id="backupImportBtn" style="flex:1;min-height:40px"></button>
     </div>
     <input type="file" id="backupFileInput" accept=".json,application/json" style="display:none">
-    <div class="clipnote">
+    <div id="backupNoteEl" class="clipnote">
       書き出すと試合データを1つのファイルに保存できます(端末の引っ越しや、iPhoneで記録→Macで編集の受け渡しにも)。
       読み込むと今の記録に上書きされます。
     </div>
@@ -399,13 +417,13 @@
 
 <div class="logwrap">
   <div class="loghead">
-    <span>PLAY-BY-PLAY(新しい順)</span>
-    <span style="font-weight:400;letter-spacing:0">行タップで選手を修正</span>
+    <span id="logHeaderLabel">PLAY-BY-PLAY(新しい順)</span>
+    <span id="logEditHintLabel" style="font-weight:400;letter-spacing:0">行タップで選手を修正</span>
   </div>
   <div class="logbody" id="logBody"></div>
 </div>
 
-<div class="footer">データは自動保存されます(この端末・このブラウザ内)</div>
+<div class="footer" id="footerLabel">データは自動保存されます(この端末・このブラウザ内)</div>
 
 <script>
 // ============================================================
@@ -415,8 +433,178 @@
 //   window.storage の代わりに → localStorage(Web標準)
 // ============================================================
 
+// ============================================================
+// ★v8: 多言語辞書 (i18n)
+// langMode: "ja" | "en"。t(key, vars) でテキスト取得。
+// ============================================================
+let langMode = "ja";
+const LANG_KEY = "bball_lang_v1";
+function loadLang() {
+  try { const r = localStorage.getItem(LANG_KEY); if (r === "en" || r === "ja") langMode = r; } catch (e) {}
+}
+function saveLang() {
+  try { localStorage.setItem(LANG_KEY, langMode); } catch (e) {}
+}
+function t(key, vars) {
+  const dict = LANG[langMode] ?? LANG.ja;
+  let str = dict[key] ?? LANG.ja[key] ?? key;
+  if (vars) for (const [k, v] of Object.entries(vars)) str = str.replaceAll("{" + k + "}", v);
+  return str;
+}
+const LANG = {
+  ja: {
+    appTitle:"SCORE TRACKER",langToggle:"EN",
+    modeToQuick:"▦ かんたん",modeToDetail:"⊞ 詳細",
+    clockStart0:"▶ 計時開始(RECと同時に)",
+    clockStartN:"▶ クリップ{n} 開始(RECと同時に)",
+    clockRunning:"● クリップ{n} {t}(タップで停止へ)",
+    clockConfirm:"もう一度タップで停止(クリップ{n} {t})",
+    qEnd:"終了",qEndConfirm:"もう一度で終了",
+    foulLabel:"ファウル {n}",
+    undoBtn:"↩ 1つ取り消す",csvBtn:"CSV保存",resetBtn:"新しい試合",resetConfirm:"もう一度で全消去",
+    liveCopyBtn:"📣 実況素材をコピー",liveMomentBtn:"📣 投稿どき: {label}",livePostBtn:"𝕏 で投稿",
+    settingsOpen:"▼ 設定(背番号・クリップ)",settingsClose:"▲ 設定を閉じる",
+    boxOpen:"▼ 選手別集計",boxClose:"▲ 選手別集計を閉じる",
+    momentsOpen:"▼ 節目の振り返り",momentsClose:"▲ 節目の振り返りを閉じる",
+    qLenLabel:"クォーターの長さ",
+    qLenNote:"試合タイマー時間(残り◯:◯)の推定に使います。ミニバス6分/練習・地域8分/通常10分/大人12分。",
+    qLen6label:"6分",qLen6note:"ミニバス",qLen8label:"8分",qLen8note:"練習・地域",
+    qLen10label:"10分",qLen10note:"通常",qLen12label:"12分",qLen12note:"大人",
+    postSettingsLabel:"X投稿用",
+    tournamentPlaceholder:"大会名(例: 令和7年度新人戦 第4支部大会)",
+    hashtagsPlaceholder:"ハッシュタグ(例: #新人戦 #中大杉並)",
+    postNote:"投稿の先頭に大会名+対戦カード、末尾にハッシュタグが入ります。空欄なら省略されます。",
+    rosterLabel:"{name} の背番号(カンマ区切り。例: 4,5,7,10)",
+    rosterPlaceholder:"未登録なら選手チップは出ません",
+    clipLabel:"クリップ番号の復旧(現在: {status})",clipNotStarted:"未開始",clipStatus:"クリップ{n}",
+    clipMinus:"−",clipPlus:"＋",
+    clipNote:"普段は使いません。RECの押し忘れや誤タップで、アプリの番号と実際の動画ファイル数がズレたときだけ、ここで合わせ直します(ログのC番号=SDカード内の何本目か、を守るため)。",
+    backupLabel:"データのバックアップ",backupExport:"この試合を書き出す",backupImport:"試合を読み込む",
+    backupNote:"書き出すと試合データを1つのファイルに保存できます(端末の引っ越しや、iPhoneで記録→Macで編集の受け渡しにも)。読み込むと今の記録に上書きされます。",
+    boxScoreHeader:"得点 / F",boxNoRecord:"記録なし",boxFoul:"F",
+    pendUnresolved:"未確定の記録({clip}{elapsed} {team}): 何点?",
+    pendChangeType:"種別を変更({clip}{elapsed} {team} ・ 現在: {what})",
+    pendEditing:"修正中: {clip}{elapsed} の {what}({team}{player})",
+    pendWho:"いまの{what}は誰?(あとで直せます・スキップ可)",
+    pendPeriod:"ピリオド:",
+    pendNoRoster:"{team} の背番号が未登録です。「▼ 設定」から登録してください。",
+    pendNoRosterEn:"{team} no roster. Add in Settings.",
+    pendFoul:"実はファウル",pendDelete:"この記録を削除",pendDeleteConfirm:"もう一度で削除",
+    pendClose:"閉じる",pendSkip:"スキップ",pendClear:"外す",
+    pendChangeTypeCurrent:"種別を変更(現在: {what})",pendFoulChip:"ファウル",
+    eventScore:"得点",eventFoul:"ファウル",eventUnconfirmed:"未確定",
+    eventPts:"+{n}P",eventFoulLabel:"foul",
+    logHeader:"PLAY-BY-PLAY(新しい順)",logEditHint:"行タップで選手を修正",
+    logEmpty:"まだ記録がありません。RECと同時に「計時開始」を押すと、ログの経過時間がそのクリップの再生位置と一致します。",
+    logCopyTitle:"マーカー名をコピー",
+    momentEmpty:"まだ節目がありません(逆転・同点・クォーター終了で出てきます)。",
+    momentCopyAll:"全部まとめてコピー({n}件・AIに渡す用)",momentCopy:"⎘ コピー",momentX:"𝕏",
+    momentQEnd:"{q}終了",momentTie:"同点!",momentLeadChange:"{name}が逆転!",momentGameClockRemain:"残",
+    quickScoreLabel:"未確定の記録",quickCountLabel:"確定スコア {score} ・ ファウル {fouls}",
+    quickHint:"タップ=得点 ・ 長押し=ファウル",quickUndoBtn:"↩ 直前を取り消す",
+    quickWakeOff:"画面オフ防止: OFF",quickWakeOn:"画面オフ防止: ON",
+    quickClockStart:"▶ 計時開始",quickClockRunning:"● C{n} {t}",
+    quickPlayerWho:"{team}の{what} 誰?",quickPlayerLater:"あとで",
+    quickWhatScore:"得点",quickWhatFoul:"ファウル",
+    liveRecent:"直近: ",liveQuarterEnd:"【{q}終了】",liveMomentHeader:"【{label}】",
+    liveGameEnd:"【試合終了】",
+    liveResult_win:"{name}の勝利",liveResult_draw:"引き分け",
+    liveQScore:"{q}: {home} {hq}点 / {away} {aq}点",
+    liveScorers:"{team}得点者: ",livePlayerScore:"#{num} {pts}点",
+    toastCopied:"コピーしました",toastCopyFailed:"コピーできませんでした",toastNoRecord:"まだ記録がありません",
+    alertBadFile:"このファイルはスコアトラッカーのバックアップではないようです。",
+    alertImportFail:"ファイルの読み込みに失敗しました。壊れているか、形式が違う可能性があります。",
+    alertImportDone:"バックアップを読み込みました。",
+    confirmOverwrite:"現在の記録に上書きされます。先に「この試合を書き出す」で保存しておくことをおすすめします。読み込みを続けますか?",
+    alertWakeLockUnsupported:"このブラウザは画面オフ防止に対応していません。設定アプリで画面ロックの時間を長めにしてください。",
+    alertWakeLockFail:"画面オフ防止を開始できませんでした。バッテリー設定によりブロックされる場合があります。",
+    footer:"データは自動保存されます(この端末・このブラウザ内)",
+    csvHeader:"クリップ,経過時間,時刻,ピリオド,チーム,選手,種別,得点,スコア",
+    csvTypeScore:"得点",csvTypeFoul:"ファウル",csvUnconfirmed:"未確定",
+  },
+  en: {
+    appTitle:"SCORE TRACKER",langToggle:"日本語",
+    modeToQuick:"▦ Quick",modeToDetail:"⊞ Detail",
+    clockStart0:"▶ Start Timer (with REC)",
+    clockStartN:"▶ Clip {n} Start (with REC)",
+    clockRunning:"● Clip {n} {t} (tap to stop)",
+    clockConfirm:"Tap again to stop (Clip {n} {t})",
+    qEnd:"End",qEndConfirm:"Confirm End",
+    foulLabel:"Foul {n}",
+    undoBtn:"↩ Undo",csvBtn:"Save CSV",resetBtn:"New Game",resetConfirm:"Tap again to clear",
+    liveCopyBtn:"📣 Copy Live Text",liveMomentBtn:"📣 Post now: {label}",livePostBtn:"Post on 𝕏",
+    settingsOpen:"▼ Settings (Roster / Clip)",settingsClose:"▲ Close Settings",
+    boxOpen:"▼ Box Score",boxClose:"▲ Close Box Score",
+    momentsOpen:"▼ Highlights",momentsClose:"▲ Close Highlights",
+    qLenLabel:"Quarter Length",
+    qLenNote:"Used to estimate game clock. Mini 6min / Practice 8min / Standard 10min / Senior 12min.",
+    qLen6label:"6 min",qLen6note:"Mini",qLen8label:"8 min",qLen8note:"Practice",
+    qLen10label:"10 min",qLen10note:"Standard",qLen12label:"12 min",qLen12note:"Senior",
+    postSettingsLabel:"Post on X",
+    tournamentPlaceholder:"Tournament name (e.g. Spring Championship 2025)",
+    hashtagsPlaceholder:"Hashtags (e.g. #SpringChamp #TeamName)",
+    postNote:"Tournament name + matchup at top, hashtags at bottom. Leave blank to omit.",
+    rosterLabel:"{name} jersey numbers (comma-separated, e.g. 4,5,7,10)",
+    rosterPlaceholder:"Leave blank to skip player chips",
+    clipLabel:"Clip No. (current: {status})",clipNotStarted:"not started",clipStatus:"Clip {n}",
+    clipMinus:"−",clipPlus:"＋",
+    clipNote:"Normally not needed. Use only when app clip number is out of sync with actual video files.",
+    backupLabel:"Backup",backupExport:"Export this game",backupImport:"Import game",
+    backupNote:"Export to save game data (also useful for iPhone → Mac transfer). Import will overwrite current data.",
+    boxScoreHeader:"PTS / F",boxNoRecord:"No records",boxFoul:"F",
+    pendUnresolved:"Unconfirmed ({clip}{elapsed} {team}): Points?",
+    pendChangeType:"Change type ({clip}{elapsed} {team} · Now: {what})",
+    pendEditing:"Editing: {clip}{elapsed} — {what} ({team}{player})",
+    pendWho:"Who {what}? (can edit later · skip ok)",
+    pendPeriod:"Period:",
+    pendNoRoster:"No roster for {team}. Add numbers in Settings.",
+    pendFoul:"Was a foul",pendDelete:"Delete this record",pendDeleteConfirm:"Tap again to delete",
+    pendClose:"Close",pendSkip:"Skip",pendClear:"Clear",
+    pendChangeTypeCurrent:"Change type (now: {what})",pendFoulChip:"Foul",
+    eventScore:"score",eventFoul:"foul",eventUnconfirmed:"pending",
+    eventPts:"+{n}P",eventFoulLabel:"foul",
+    logHeader:"PLAY-BY-PLAY (newest first)",logEditHint:"Tap row to edit player",
+    logEmpty:"No records yet. Tap 'Start Timer' with REC so elapsed time matches the video clip.",
+    logCopyTitle:"Copy marker name",
+    momentEmpty:"No highlights yet (lead changes, ties, and quarter ends will appear here).",
+    momentCopyAll:"Copy all ({n} items — for AI)",momentCopy:"⎘ Copy",momentX:"𝕏",
+    momentQEnd:"End of {q}",momentTie:"Tied!",momentLeadChange:"{name} takes the lead!",momentGameClockRemain:"",
+    quickScoreLabel:"Unconfirmed",quickCountLabel:"Score {score} · Fouls {fouls}",
+    quickHint:"Tap=Score · Hold=Foul",quickUndoBtn:"↩ Undo",
+    quickWakeOff:"Keep Awake: OFF",quickWakeOn:"Keep Awake: ON",
+    quickClockStart:"▶ Start Timer",quickClockRunning:"● C{n} {t}",
+    quickPlayerWho:"{team} {what} — who?",quickPlayerLater:"Later",
+    quickWhatScore:"score",quickWhatFoul:"foul",
+    liveRecent:"Recent: ",liveQuarterEnd:"[End of {q}]",liveMomentHeader:"[{label}]",
+    liveGameEnd:"[Final]",
+    liveResult_win:"{name} wins",liveResult_draw:"Draw",
+    liveQScore:"{q}: {home} {hq} / {away} {aq}",
+    liveScorers:"{team} scorers: ",livePlayerScore:"#{num} {pts}pts",
+    toastCopied:"Copied!",toastCopyFailed:"Copy failed",toastNoRecord:"No records yet",
+    alertBadFile:"This file doesn't appear to be a Score Tracker backup.",
+    alertImportFail:"Failed to read file. It may be corrupted or in the wrong format.",
+    alertImportDone:"Backup loaded.",
+    confirmOverwrite:"This will overwrite current data. Consider exporting first. Continue?",
+    alertWakeLockUnsupported:"This browser doesn't support keep-awake. Try a longer screen lock timeout in device settings.",
+    alertWakeLockFail:"Could not enable keep-awake. Battery settings may be blocking it.",
+    footer:"Data is saved automatically (this device / browser only)",
+    csvHeader:"Clip,Elapsed,Time,Period,Team,Player,Type,Points,Score",
+    csvTypeScore:"score",csvTypeFoul:"foul",csvUnconfirmed:"pending",
+  }
+};
+// ============================================================
+
 const QUARTERS = ["1Q", "2Q", "3Q", "4Q", "OT"]; // 日本のバスケ表記(数字が前)
 const STORAGE_KEY = "bball_game_v2";
+// ★v5: かんたんモード変数(applyLangより前に宣言が必要)
+const MODE_KEY = "bball_mode_v1";
+let mode = "detail";
+let modeManual = false;
+let wakeLock = null;
+let wakeOn = false;
+let holdTimer = null;
+let holdFired = false;
+const HOLD_MS = 500;
 
 // ---- 状態(アプリが覚えておくデータ) ----
 let state = {
@@ -431,6 +619,8 @@ let state = {
   roster: ["", ""],
   quarterMinutes: 10,   // ★v7: クォーターの長さ(分)。ミニバス6/練習8/通常10/大人12
   quarterStarts: {},    // ★v7: 各クォーター開始時の撮影経過秒 { "1Q": 123, ... } 同期点
+  tournament: "",       // ★v7: 大会名(投稿文の先頭に入れる)
+  hashtags: "",         // ★v7: ハッシュタグ(自由入力。投稿文の末尾に入れる)
 };
 let pendingId = null;     // 選手選択中のイベントID(保存しない一時状態)
 let changeTypeOpen = null; // ★v5: 「種別を変更」UIを開いている対象のイベントID
@@ -465,6 +655,8 @@ function load() {
         roster: d.roster ?? ["", ""],
         quarterMinutes: d.quarterMinutes ?? 10, // ★v7
         quarterStarts: d.quarterStarts ?? {},   // ★v7
+        tournament: d.tournament ?? "",          // ★v7
+        hashtags: d.hashtags ?? "",              // ★v7
       };
       // ★v6: 旧表記(Q1〜Q4)を新表記(1Q〜4Q)へ変換
       const qFix = { "Q1": "1Q", "Q2": "2Q", "Q3": "3Q", "Q4": "4Q" };
@@ -535,10 +727,8 @@ function accentClass(i) { return i === 0 ? "t0" : "t1"; }
 //   将来AI連携を足すときも、ここで作る「素材文字列」を差し替えるだけで済む。
 // ============================================================
 function copyText(text) {
-  // navigator.clipboardが使える環境(httpsのGitHub Pages等)はそれを使う。
-  // 使えない場合は旧来のexecCommandで代替する。
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(() => showToast("コピーしました")).catch(() => fallbackCopy(text));
+    navigator.clipboard.writeText(text).then(() => showToast(t("toastCopied"))).catch(() => fallbackCopy(text));
   } else {
     fallbackCopy(text);
   }
@@ -549,8 +739,8 @@ function fallbackCopy(text) {
   ta.style.position = "fixed"; ta.style.opacity = "0";
   document.body.appendChild(ta);
   ta.select();
-  try { document.execCommand("copy"); showToast("コピーしました"); }
-  catch (e) { showToast("コピーできませんでした"); }
+  try { document.execCommand("copy"); showToast(t("toastCopied")); }
+  catch (e) { showToast(t("toastCopyFailed")); }
   document.body.removeChild(ta);
 }
 let toastTimer = null;
@@ -569,9 +759,9 @@ function showToast(msg) {
 
 // ★v6: イベントの「何が起きたか」の部分(2P, 3P, foul など)。両方の出力で共通。
 function eventWhatText(e) {
-  if (e.type === "foul") return "foul";
-  if (e.pts == null) return "得点";
-  return e.pts + "P";
+  if (e.type === "foul") return t("eventFoulLabel");
+  if (e.pts == null) return t("eventScore");
+  return t("eventPts", { n: e.pts });
 }
 
 // ★v6: マーカー名用テキスト(編集のチャプター用・簡潔重視)
@@ -590,11 +780,9 @@ function eventToLiveText(e) {
 }
 
 // ★v6: 現在の試合状況を「実況素材」テキストにする
-//   AIに渡しても、そのまま投稿してもよい中立的な素材。
 function buildLiveText() {
   const h = state.teams[0];
   const a = state.teams[1];
-  // 直近の得点イベント(最大3件)を新しい順に拾う
   const recentScores = state.events
     .filter(e => e.type === "score" && e.pts != null)
     .slice(0, 3)
@@ -602,7 +790,7 @@ function buildLiveText() {
   let text = "【" + QUARTERS[state.quarter] + "】" +
     h.name + " " + h.score + " - " + a.score + " " + a.name;
   if (recentScores.length) {
-    text += "\n直近: " + recentScores.join(" / ");
+    text += "\n" + t("liveRecent") + recentScores.join(" / ");
   }
   return text;
 }
@@ -617,39 +805,32 @@ function detectMoment() {
   if (state.events.length === 0) return null;
 
   // --- クォーター終了の検知 ---
-  // 最新イベントのピリオドより現在のピリオドが先に進んでいたら、
-  // 直前のピリオドが終わったとみなす。
   const latest = state.events[0];
   const latestQIdx = QUARTERS.indexOf(latest.q);
   if (state.quarter > latestQIdx && latestQIdx >= 0) {
     return {
       kind: "quarter_end",
-      label: QUARTERS[latestQIdx] + "終了",
-      endedQ: QUARTERS[latestQIdx], // ★v6: 振り返り対象のクォーター
+      label: t("momentQEnd", { q: QUARTERS[latestQIdx] }),
+      endedQ: QUARTERS[latestQIdx],
     };
   }
 
   // --- 逆転/同点の検知 ---
-  // 最新の「確定した得点」イベントについて、その得点の前後でリード状況がどう変わったか見る。
   const scoreLines = computeScoreLines();
-  // 確定得点イベントを新しい順に並べ、最新の確定得点を探す
   const scoreEvents = state.events.filter(e => e.type === "score" && e.pts != null);
   if (scoreEvents.length > 0) {
     const last = scoreEvents[0];
     const [hAfter, aAfter] = scoreLines[last.id].split("-").map(Number);
-    // この得点の「前」のスコア = 後 から この得点分を引く
     let hBefore = hAfter, aBefore = aAfter;
     if (last.team === 0) hBefore -= last.pts; else aBefore -= last.pts;
     const diffBefore = hBefore - aBefore;
     const diffAfter = hAfter - aAfter;
-    // 同点になった
     if (diffAfter === 0 && diffBefore !== 0) {
-      return { kind: "tie", label: "同点!", scoreText: hAfter + "-" + aAfter };
+      return { kind: "tie", label: t("momentTie"), scoreText: hAfter + "-" + aAfter };
     }
-    // リードが入れ替わった(符号が反転 = 逆転)
     if (diffBefore !== 0 && diffAfter !== 0 && Math.sign(diffBefore) !== Math.sign(diffAfter)) {
       const leader = diffAfter > 0 ? state.teams[0].name : state.teams[1].name;
-      return { kind: "lead_change", label: leader + "が逆転!", scoreText: hAfter + "-" + aAfter };
+      return { kind: "lead_change", label: t("momentLeadChange", { name: leader }), scoreText: hAfter + "-" + aAfter };
     }
   }
   return null;
@@ -658,27 +839,24 @@ function detectMoment() {
 // ★v6: 指定クォーターの振り返りテキストを作る(クォーター終了の節目で使う)
 function buildQuarterSummary(q) {
   const evs = state.events.filter(e => e.q === q);
-  // そのクォーターの両チーム得点
   let qh = 0, qa = 0;
-  const scorers = [0, 1].map(() => ({})); // チームごと { 番号: 得点 }
+  const scorers = [0, 1].map(() => ({}));
   for (const e of evs) {
     if (e.type !== "score" || e.pts == null) continue;
     if (e.team === 0) qh += e.pts; else qa += e.pts;
     if (e.player) {
-      const t = scorers[e.team];
-      t[e.player] = (t[e.player] || 0) + e.pts;
+      const ts = scorers[e.team];
+      ts[e.player] = (ts[e.player] || 0) + e.pts;
     }
   }
   const h = state.teams[0], a = state.teams[1];
-  // 終了時点の累計スコア(画面の合計をそのまま使う)
   let text = h.name + " " + h.score + " - " + a.score + " " + a.name;
-  text += "\n" + q + ": " + h.name + " " + qh + "点 / " + a.name + " " + qa + "点";
-  // 得点者(背番号が登録されているチームのみ・得点の多い順)
+  text += "\n" + t("liveQScore", { q, home: h.name, hq: qh, away: a.name, aq: qa });
   [0, 1].forEach(i => {
     const entries = Object.entries(scorers[i]).sort((x, y) => y[1] - x[1]);
     if (entries.length) {
-      const teamName = state.teams[i].name;
-      text += "\n" + teamName + "得点者: " + entries.map(([n, p]) => "#" + n + " " + p + "点").join(", ");
+      text += "\n" + t("liveScorers", { team: state.teams[i].name }) +
+        entries.map(([n, p]) => t("livePlayerScore", { num: n, pts: p })).join(", ");
     }
   });
   return text;
@@ -687,14 +865,12 @@ function buildQuarterSummary(q) {
 // ★v6: 試合終了サマリー(最終スコア+試合全体の得点者ランキング)
 function buildGameEndText() {
   const h = state.teams[0], a = state.teams[1];
-  // 勝敗を判定
   let result;
-  if (h.score > a.score) result = h.name + "の勝利";
-  else if (a.score > h.score) result = a.name + "の勝利";
-  else result = "引き分け";
-  let text = "【試合終了】\n" + h.name + " " + h.score + " - " + a.score + " " + a.name + "(" + result + ")";
+  if (h.score > a.score) result = t("liveResult_win", { name: h.name });
+  else if (a.score > h.score) result = t("liveResult_win", { name: a.name });
+  else result = t("liveResult_draw");
+  let text = t("liveGameEnd") + "\n" + h.name + " " + h.score + " - " + a.score + " " + a.name + "(" + result + ")";
 
-  // ★v6: クォーター別得点(試合の流れが分かる)。記録のあるクォーターだけ出す。
   const qParts = [];
   QUARTERS.forEach(q => {
     let qh = 0, qa = 0, hasEvent = false;
@@ -709,7 +885,6 @@ function buildGameEndText() {
   });
   if (qParts.length) text += "\n" + qParts.join("\n");
 
-  // 試合全体の得点者(背番号が登録されているチームのみ・得点の多い順)
   const scorers = [{}, {}];
   for (const e of state.events) {
     if (e.type !== "score" || e.pts == null || !e.player) continue;
@@ -718,7 +893,8 @@ function buildGameEndText() {
   [0, 1].forEach(i => {
     const entries = Object.entries(scorers[i]).sort((x, y) => y[1] - x[1]);
     if (entries.length) {
-      text += "\n" + state.teams[i].name + "得点者: " + entries.map(([n, p]) => "#" + n + " " + p + "点").join(", ");
+      text += "\n" + t("liveScorers", { team: state.teams[i].name }) +
+        entries.map(([n, p]) => t("livePlayerScore", { num: n, pts: p })).join(", ");
     }
   });
   return text;
@@ -749,7 +925,7 @@ function collectMoments() {
     if (prevQ !== null && e.q !== prevQ) {
       moments.push({
         kind: "quarter_end",
-        label: prevQ + "終了",
+        label: t("momentQEnd", { q: prevQ }),
         q: prevQ,
         gameClock: "",
         score: h + "-" + a,
@@ -762,17 +938,15 @@ function collectMoments() {
       const diffBefore = h - a;
       if (e.team === 0) h += e.pts; else a += e.pts;
       const diffAfter = h - a;
-      // 同点になった
       if (diffAfter === 0 && diffBefore !== 0) {
         moments.push({
-          kind: "tie", label: "同点!", q: e.q,
+          kind: "tie", label: t("momentTie"), q: e.q,
           gameClock: fmtGameClock(e), score: h + "-" + a, eventId: e.id,
         });
       } else if (diffBefore !== 0 && diffAfter !== 0 && Math.sign(diffBefore) !== Math.sign(diffAfter)) {
-        // リードが入れ替わった = 逆転
         const leader = diffAfter > 0 ? state.teams[0].name : state.teams[1].name;
         moments.push({
-          kind: "lead_change", label: leader + "が逆転!", q: e.q,
+          kind: "lead_change", label: t("momentLeadChange", { name: leader }), q: e.q,
           gameClock: fmtGameClock(e), score: h + "-" + a, eventId: e.id,
         });
       }
@@ -781,13 +955,27 @@ function collectMoments() {
   return moments;
 }
 
-// 振り返り一覧の1件分を、コピー/投稿用のテキストにする
 function momentToText(m) {
   const h = state.teams[0], a = state.teams[1];
   let head = "【" + m.label + "】";
-  let line = "[" + m.q + (m.gameClock ? " 残" + m.gameClock : "") + "] " +
+  const remain = t("momentGameClockRemain");
+  let line = "[" + m.q + (m.gameClock ? " " + (remain ? remain : "") + m.gameClock : "") + "] " +
     h.name + " " + m.score.split("-")[0] + " - " + m.score.split("-")[1] + " " + a.name;
   return head + "\n" + line;
+}
+
+// ★v7: 投稿文に大会名(先頭)と対戦カード、ハッシュタグ(末尾)を付ける。
+//   大会名・ハッシュタグが空ならその行は省略する。X投稿・コピー直前に通す。
+function decorateForPost(body) {
+  let out = "";
+  const tour = (state.tournament || "").trim();
+  const cap = state.teams[0].name + " vs " + state.teams[1].name;
+  // 先頭行: 大会名 + 対戦カード(大会名があれば「大会名 カード」、なければカードのみは付けない=本文に既にチーム名があるため)
+  if (tour) out += tour + " " + cap + "\n";
+  out += body;
+  const tags = (state.hashtags || "").trim();
+  if (tags) out += "\n" + tags;
+  return out;
 }
 const CONFIRM_COOLDOWN = 350; // ms。この時間内の2回目クリックはダブルタップとみなして無視
 
@@ -989,8 +1177,8 @@ function handleResetButton() {
 // ---- CSV書き出し ----
 function exportCSV() {
   if (state.events.length === 0) return;
-  const scoreLines = computeScoreLines(); // ★v6: 計算した正しい途中経過スコア
-  const header = "クリップ,経過時間,時刻,ピリオド,チーム,選手,種別,得点,スコア";
+  const scoreLines = computeScoreLines();
+  const header = t("csvHeader");
   const rows = [...state.events].reverse().map(e => [
     e.clip ?? "",
     fmtElapsed(e.elapsed),
@@ -998,8 +1186,8 @@ function exportCSV() {
     e.q,
     e.teamName,
     e.player ? "#" + e.player : "",
-    e.type === "score" ? "得点" : "ファウル",
-    e.type === "score" ? (e.pts == null ? "未確定" : "+" + e.pts) : "",
+    e.type === "score" ? t("csvTypeScore") : t("csvTypeFoul"),
+    e.type === "score" ? (e.pts == null ? t("csvUnconfirmed") : "+" + e.pts) : "",
     scoreLines[e.id],
   ].join(","));
   const blob = new Blob(["\uFEFF" + [header, ...rows].join("\n")],
@@ -1040,7 +1228,7 @@ function importBackup(file) {
       // バックアップ形式(app:score-tracker)か、state単体か、両方を受け付ける
       const loaded = data.state ? data.state : data;
       if (!loaded || !Array.isArray(loaded.teams) || !Array.isArray(loaded.events)) {
-        alert("このファイルはスコアトラッカーのバックアップではないようです。");
+        alert(t("alertBadFile"));
         return;
       }
       // 既存の一時状態をクリアしてから復元する
@@ -1053,21 +1241,26 @@ function importBackup(file) {
         roster: loaded.roster ?? ["", ""],
         quarterMinutes: loaded.quarterMinutes ?? 10, // ★v7
         quarterStarts: loaded.quarterStarts ?? {},   // ★v7
+        tournament: loaded.tournament ?? "",          // ★v7
+        hashtags: loaded.hashtags ?? "",              // ★v7
       };
       // ★v6: 旧表記(Q1〜Q4)を新表記(1Q〜4Q)へ変換して互換性を保つ
       const qFix = { "Q1": "1Q", "Q2": "2Q", "Q3": "3Q", "Q4": "4Q" };
       state.events.forEach(e => { if (qFix[e.q]) e.q = qFix[e.q]; });
       pendingId = null; changeTypeOpen = null; lastEditedId = null;
       save();
-      renderBoard(); // チームカードを作り直す(名前が変わるため)
+      renderBoard();
       renderAll();
-      // ロスター入力欄の表示も更新
       ["roster0", "roster1"].forEach((id, i) => {
         document.getElementById(id).value = state.roster[i];
       });
-      alert("バックアップを読み込みました。");
+      const tEl = document.getElementById("tournamentInput");
+      const hEl = document.getElementById("hashtagsInput");
+      if (tEl) tEl.value = state.tournament || "";
+      if (hEl) hEl.value = state.hashtags || "";
+      alert(t("alertImportDone"));
     } catch (e) {
-      alert("ファイルの読み込みに失敗しました。壊れているか、形式が違う可能性があります。");
+      alert(t("alertImportFail"));
     }
   };
   reader.readAsText(file);
@@ -1093,14 +1286,14 @@ function renderClock() {
   if (!state.startAt) {
     btn.className = "start";
     btn.textContent = state.clipNo === 0
-      ? "▶ 計時開始(RECと同時に)"
-      : "▶ クリップ" + (state.clipNo + 1) + " 開始(RECと同時に)";
+      ? t("clockStart0")
+      : t("clockStartN", { n: state.clipNo + 1 });
   } else if (confirming === "stop") {
     btn.className = "confirm";
-    btn.textContent = "もう一度タップで停止(クリップ" + state.clipNo + " " + fmtElapsed(elapsed) + ")";
+    btn.textContent = t("clockConfirm", { n: state.clipNo, t: fmtElapsed(elapsed) });
   } else {
     btn.className = "running";
-    btn.textContent = "● クリップ" + state.clipNo + " " + fmtElapsed(elapsed) + "(タップで停止へ)";
+    btn.textContent = t("clockRunning", { n: state.clipNo, t: fmtElapsed(elapsed) });
   }
 }
 
@@ -1129,7 +1322,7 @@ function renderQuarters() {
   const endBtn = document.createElement("button");
   // 終了済みなら active(ハイライト)、確認中なら endconfirm(赤)
   endBtn.className = "qbtn" + (gameEndConfirm ? " endconfirm" : (gameEnded ? " active" : ""));
-  endBtn.textContent = gameEndConfirm ? "もう一度で終了" : "終了";
+  endBtn.textContent = gameEndConfirm ? t("qEndConfirm") : t("qEnd");
   endBtn.onclick = () => {
     if (!gameEndConfirm) {
       gameEndConfirm = true;
@@ -1139,9 +1332,9 @@ function renderQuarters() {
     } else {
       gameEndConfirm = false;
       clearTimeout(gameEndTimer);
-      if (state.events.length === 0) { showToast("まだ記録がありません"); return; }
+      if (state.events.length === 0) { showToast(t("toastNoRecord")); return; }
       gameEnded = true; // ★v6: 終了状態に移行(ハイライトが終了ボタンに移る)
-      copyText(buildGameEndText());
+      copyText(decorateForPost(buildGameEndText()));
       renderQuarters();
     }
   };
@@ -1151,20 +1344,20 @@ function renderQuarters() {
 function renderBoard() {
   const board = document.getElementById("board");
   board.innerHTML = "";
-  state.teams.forEach((t, i) => {
+  state.teams.forEach((tm, i) => {
     const card = document.createElement("div");
     card.className = "teamcard " + accentClass(i);
 
     const name = document.createElement("input");
     name.className = "tname";
-    name.value = t.name;
+    name.value = tm.name;
     name.oninput = () => { state.teams[i].name = name.value; save(); renderSettings(); };
     card.appendChild(name);
 
     const score = document.createElement("div");
     score.className = "score";
     score.id = "score" + i;
-    score.textContent = t.score;
+    score.textContent = tm.score;
     card.appendChild(score);
 
     const row = document.createElement("div");
@@ -1181,7 +1374,7 @@ function renderBoard() {
     const foul = document.createElement("button");
     foul.className = "foulbtn";
     foul.id = "foul" + i;
-    foul.textContent = "ファウル " + t.fouls;
+    foul.textContent = t("foulLabel", { n: tm.fouls });
     foul.onclick = () => addFoul(i);
     card.appendChild(foul);
 
@@ -1191,9 +1384,9 @@ function renderBoard() {
 
 // スコアとファウル数だけ更新(チーム名入力のフォーカスを守るため、カード全体は作り直さない)
 function renderScores() {
-  state.teams.forEach((t, i) => {
-    document.getElementById("score" + i).textContent = t.score;
-    document.getElementById("foul" + i).textContent = "ファウル " + t.fouls;
+  state.teams.forEach((team, i) => {
+    document.getElementById("score" + i).textContent = team.score;
+    document.getElementById("foul" + i).textContent = t("foulLabel", { n: team.fouls });
   });
 }
 
@@ -1205,20 +1398,18 @@ function renderPending() {
 
   // ★v5: 得点が未確定(かんたんモードで記録)の場合 → まず+1/+2/+3を選ぶ
   if (e.type === "score" && e.pts == null) {
-    const delLabel = deleteConfirmId === e.id ? "もう一度で削除" : "この記録を削除";
+    const delLabel = deleteConfirmId === e.id ? t("pendDeleteConfirm") : t("pendDelete");
     const delCls = "small warn" + (deleteConfirmId === e.id ? " confirm" : "");
+    const clipStr = e.clip ? "C" + e.clip + " " : "";
     let inner = '<div class="pendbox ' + ac + '"><div class="pendlabel">' +
-      "未確定の記録(" + (e.clip ? "C" + e.clip + " " : "") + fmtElapsed(e.elapsed) + " " +
-      esc(e.teamName) + "): 何点?</div>";
+      t("pendUnresolved", { clip: clipStr, elapsed: fmtElapsed(e.elapsed), team: esc(e.teamName) }) + '</div>';
     inner += '<div class="chips">';
     [1, 2, 3].forEach(p => {
       inner += '<button class="chip ' + ac + 'chip" data-pts="' + p + '" style="font-size:22px">+' + p + "</button>";
     });
-    // ★v5修正: 長押しのつもりがタップになっていた場合の救済(時間・クリップ番号を保ったままファウルへ変換)
-    inner += '<button class="small warn" data-act="foul" style="min-height:44px">実はファウル</button>';
-    // ★v5: そもそも記録自体が誤りだった場合の削除(二度押し確認)
+    inner += '<button class="small warn" data-act="foul" style="min-height:44px">' + t("pendFoul") + '</button>';
     inner += '<button class="' + delCls + '" data-act="delete" style="min-height:44px">' + delLabel + '</button>';
-    inner += '<button class="small" data-act="close" style="min-height:44px">閉じる</button></div></div>';
+    inner += '<button class="small" data-act="close" style="min-height:44px">' + t("pendClose") + '</button></div></div>';
     area.innerHTML = inner;
     area.querySelectorAll("[data-pts]").forEach(b =>
       b.onclick = () => confirmQuickScore(e.id, Number(b.dataset.pts)));
@@ -1232,21 +1423,21 @@ function renderPending() {
   }
 
   const isPast = state.events[0]?.id !== e.id;
-  const what = e.type === "score" ? "+" + e.pts : "ファウル";
+  const what = e.type === "score" ? "+" + e.pts : t("eventFoul");
 
   // ★v5: 「種別を変更」が開かれている場合 → +1/+2/+3/ファウルの4択を表示
   if (changeTypeOpen === e.id) {
+    const clipStr = e.clip ? "C" + e.clip + " " : "";
     let inner = '<div class="pendbox ' + ac + '"><div class="pendlabel">' +
-      "種別を変更(" + (e.clip ? "C" + e.clip + " " : "") + fmtElapsed(e.elapsed) + " " +
-      esc(e.teamName) + " ・ 現在: " + what + ")</div>";
+      t("pendChangeType", { clip: clipStr, elapsed: fmtElapsed(e.elapsed), team: esc(e.teamName), what }) + '</div>';
     inner += '<div class="chips">';
     [1, 2, 3].forEach(p => {
       const sel = (e.type === "score" && e.pts === p) ? " sel" : "";
       inner += '<button class="chip ' + ac + 'chip' + sel + '" data-pts="' + p + '" style="font-size:22px">+' + p + "</button>";
     });
     const foulSel = e.type === "foul" ? " sel" : "";
-    inner += '<button class="chip ' + ac + 'chip' + foulSel + '" data-act="foul">ファウル</button>';
-    inner += '<button class="small" data-act="close" style="min-height:44px">閉じる</button></div></div>';
+    inner += '<button class="chip ' + ac + 'chip' + foulSel + '" data-act="foul">' + t("pendFoulChip") + '</button>';
+    inner += '<button class="small" data-act="close" style="min-height:44px">' + t("pendClose") + '</button></div></div>';
     area.innerHTML = inner;
     area.querySelectorAll("[data-pts]").forEach(b =>
       b.onclick = () => { changeEventType(e.id, "score", Number(b.dataset.pts)); changeTypeOpen = null; });
@@ -1257,41 +1448,37 @@ function renderPending() {
     return;
   }
 
+  const clipStr = e.clip ? "C" + e.clip + " " : "";
+  const playerStr = e.player ? " #" + esc(e.player) : "";
   const label = isPast
-    ? "修正中: " + (e.clip ? "C" + e.clip + " " : "") + fmtElapsed(e.elapsed) + " の " + what +
-      "(" + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + ")"
-    : "いまの" + what + "は誰?(あとで直せます・スキップ可)";
+    ? t("pendEditing", { clip: clipStr, elapsed: fmtElapsed(e.elapsed), what, team: esc(e.teamName), player: playerStr })
+    : t("pendWho", { what });
 
   const nums = rosterList(e.team);
   let inner = '<div class="pendbox ' + ac + '"><div class="pendlabel">' + label + "</div>";
-  // ★v5: 確定済みの記録を、後から得点⇄ファウルへやり直せるようにする / 削除する
-  const delLabel = deleteConfirmId === e.id ? "もう一度で削除" : "この記録を削除";
+  const delLabel = deleteConfirmId === e.id ? t("pendDeleteConfirm") : t("pendDelete");
   const delCls = "small warn" + (deleteConfirmId === e.id ? " confirm" : "");
   inner += '<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">' +
-    '<button class="small warn" data-act="changetype">種別を変更(現在: ' + what + ')</button>' +
+    '<button class="small warn" data-act="changetype">' + t("pendChangeTypeCurrent", { what }) + '</button>' +
     '<button class="' + delCls + '" data-act="delete">' + delLabel + '</button>' +
     '</div>';
-  // ★v6: クォーターの修正(押し間違いや切り替え忘れの訂正用)
-  //   ★v6修正: 選手チップ(.chip)と同じクラスにすると assignPlayer のハンドラに
-  //   巻き込まれてしまうため、別クラス(pchip)にする。
-  inner += '<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--dim);margin-right:6px">ピリオド:</span>';
+  inner += '<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--dim);margin-right:6px">' + t("pendPeriod") + '</span>';
   QUARTERS.forEach(q => {
     const sel = e.q === q ? " sel" : "";
     inner += '<button class="pchip ' + ac + 'chip' + sel + '" data-q="' + q + '" style="min-width:40px;min-height:34px;font-size:13px;margin-right:4px">' + q + '</button>';
   });
   inner += '</div>';
   if (nums.length === 0) {
-    inner += '<div style="font-size:12px;color:var(--dim)">' + esc(e.teamName) +
-      " の背番号が未登録です。「▼ 設定」から登録してください。</div>";
+    inner += '<div style="font-size:12px;color:var(--dim)">' + t("pendNoRoster", { team: esc(e.teamName) }) + '</div>';
   } else {
     inner += '<div class="chips">';
     nums.forEach(n => {
       const sel = e.player === n ? " sel" : "";
       inner += '<button class="chip ' + ac + 'chip' + sel + '" data-num="' + esc(n) + '">#' + esc(n) + "</button>";
     });
-    if (e.player) inner += '<button class="small warn" data-act="clear" style="min-height:44px">外す</button>';
+    if (e.player) inner += '<button class="small warn" data-act="clear" style="min-height:44px">' + t("pendClear") + '</button>';
     inner += '<button class="small" data-act="close" style="min-height:44px">' +
-      (isPast ? "閉じる" : "スキップ") + "</button></div>";
+      (isPast ? t("pendClose") : t("pendSkip")) + "</button></div>";
   }
   inner += "</div>";
   area.innerHTML = inner;
@@ -1303,11 +1490,9 @@ function renderPending() {
     renderPending();
   };
 
-  // ★v5: 削除(二度押し確認。4秒で自動的に確認状態が解除される)
   const deleteBtn = area.querySelector('[data-act="delete"]');
   if (deleteBtn) deleteBtn.onclick = () => handleDeleteClick(e.id);
 
-  // ★v6: クォーターの修正
   area.querySelectorAll("[data-q]").forEach(b =>
     b.onclick = () => {
       e.q = b.dataset.q;
@@ -1328,8 +1513,8 @@ function renderOps() {
   document.getElementById("undoBtn").disabled = !has;
   document.getElementById("csvBtn").disabled = !has;
   const r = document.getElementById("resetBtn");
-  if (confirming === "reset") { r.classList.add("confirm"); r.textContent = "もう一度で全消去"; }
-  else { r.classList.remove("confirm"); r.textContent = "新しい試合"; }
+  if (confirming === "reset") { r.classList.add("confirm"); r.textContent = t("resetConfirm"); }
+  else { r.classList.remove("confirm"); r.textContent = t("resetBtn"); }
 }
 
 function renderSettings() {
@@ -1338,45 +1523,43 @@ function renderSettings() {
   if (qlw) {
     qlw.innerHTML = "";
     [
-      { m: 6, label: "6分", note: "ミニバス" },
-      { m: 8, label: "8分", note: "練習・地域" },
-      { m: 10, label: "10分", note: "通常" },
-      { m: 12, label: "12分", note: "大人" },
+      { m: 6, lk: "qLen6label", nk: "qLen6note" },
+      { m: 8, lk: "qLen8label", nk: "qLen8note" },
+      { m: 10, lk: "qLen10label", nk: "qLen10note" },
+      { m: 12, lk: "qLen12label", nk: "qLen12note" },
     ].forEach(opt => {
       const b = document.createElement("button");
       const on = (state.quarterMinutes || 10) === opt.m;
       b.className = "small" + (on ? " confirm" : "");
       b.style.flex = "1";
       b.style.minHeight = "40px";
-      b.innerHTML = opt.label + '<br><span style="font-size:9px;opacity:.8">' + opt.note + '</span>';
+      b.innerHTML = t(opt.lk) + '<br><span style="font-size:9px;opacity:.8">' + t(opt.nk) + '</span>';
       b.onclick = () => { state.quarterMinutes = opt.m; save(); renderSettings(); renderLog(); };
       qlw.appendChild(b);
     });
   }
-  document.getElementById("rlabel0").textContent =
-    state.teams[0].name + " の背番号(カンマ区切り。例: 4,5,7,10)";
-  document.getElementById("rlabel1").textContent =
-    state.teams[1].name + " の背番号(カンマ区切り。例: 4,5,7,10)";
-  document.getElementById("clipLabel").textContent =
-    "クリップ番号の復旧(現在: " + (state.clipNo === 0 ? "未開始" : "クリップ" + state.clipNo) + ")";
+  document.getElementById("rlabel0").textContent = t("rosterLabel", { name: state.teams[0].name });
+  document.getElementById("rlabel1").textContent = t("rosterLabel", { name: state.teams[1].name });
+  const clipStatus = state.clipNo === 0 ? t("clipNotStarted") : t("clipStatus", { n: state.clipNo });
+  document.getElementById("clipLabel").textContent = t("clipLabel", { status: clipStatus });
 }
 
 function renderBox() {
   const panel = document.getElementById("boxPanel");
   panel.innerHTML = "";
-  state.teams.forEach((t, i) => {
+  state.teams.forEach((tm, i) => {
     const card = document.createElement("div");
     card.className = "boxcard";
     let inner = '<div class="boxhead ' + accentClass(i) + '"><span style="color:' +
-      (i === 0 ? "var(--home)" : "var(--away)") + '">' + esc(t.name) +
-      '</span><span style="color:var(--dim)">得点 / F</span></div>';
+      (i === 0 ? "var(--home)" : "var(--away)") + '">' + esc(tm.name) +
+      '</span><span style="color:var(--dim)">' + t("boxScoreHeader") + '</span></div>';
     const rows = boxScore(i);
     if (rows.length === 0) {
-      inner += '<div style="font-size:12px;color:var(--dim)">記録なし</div>';
+      inner += '<div style="font-size:12px;color:var(--dim)">' + t("boxNoRecord") + '</div>';
     } else {
       rows.forEach(([num, v]) => {
         inner += '<div class="boxrow' + (v.fouls >= 4 ? " hot" : "") + '"><span style="font-weight:800">#' +
-          esc(num) + "</span><span>" + v.pts + "点 / " + v.fouls + "F</span></div>";
+          esc(num) + "</span><span>" + v.pts + "pts / " + v.fouls + t("boxFoul") + "</span></div>";
       });
     }
     card.innerHTML = inner;
@@ -1384,43 +1567,37 @@ function renderBox() {
   });
 }
 
-// ★v7: 節目の振り返り一覧を描画する。ログから抽出した全節目を時系列で並べ、
-//   各節目にコピー/X投稿ボタンを付ける。先頭に「全部まとめてコピー」も置く。
 function renderMoments() {
   const panel = document.getElementById("momentsPanel");
-  if (panel.classList.contains("hidden")) return; // 閉じているときは描画しない
+  if (panel.classList.contains("hidden")) return;
   panel.innerHTML = "";
   const moments = collectMoments();
   if (moments.length === 0) {
-    panel.innerHTML = '<div style="font-size:12px;color:var(--dim);padding:4px">まだ節目がありません(逆転・同点・クォーター終了で出てきます)。</div>';
+    panel.innerHTML = '<div style="font-size:12px;color:var(--dim);padding:4px">' + t("momentEmpty") + '</div>';
     return;
   }
-  // 全部まとめてコピー
   const allBtn = document.createElement("button");
   allBtn.className = "small";
   allBtn.style.cssText = "width:100%;min-height:38px;margin-bottom:8px";
-  allBtn.textContent = "全部まとめてコピー(" + moments.length + "件・AIに渡す用)";
-  allBtn.onclick = () => {
-    const text = moments.map(momentToText).join("\n\n");
-    copyText(text);
-  };
+  allBtn.textContent = t("momentCopyAll", { n: moments.length });
+  allBtn.onclick = () => { copyText(moments.map(momentToText).join("\n\n")); };
   panel.appendChild(allBtn);
-  // 各節目
   moments.forEach(m => {
     const row = document.createElement("div");
     row.className = "momentrow";
     const kindColor = m.kind === "quarter_end" ? "var(--dim)" : (m.kind === "tie" ? "var(--home)" : "var(--away)");
+    const remain = t("momentGameClockRemain");
     row.innerHTML =
       '<div class="mtop"><span class="mlabel" style="color:' + kindColor + '">' + esc(m.label) + '</span>' +
-      '<span class="mmeta">' + m.q + (m.gameClock ? " 残" + m.gameClock : "") + " / " + m.score + '</span></div>';
+      '<span class="mmeta">' + m.q + (m.gameClock ? " " + (remain ? remain : "") + m.gameClock : "") + " / " + m.score + '</span></div>';
     const btns = document.createElement("div");
     btns.className = "mbtns";
     const copyB = document.createElement("button");
-    copyB.className = "small"; copyB.textContent = "⎘ コピー";
-    copyB.onclick = () => copyText(momentToText(m));
+    copyB.className = "small"; copyB.textContent = t("momentCopy");
+    copyB.onclick = () => copyText(decorateForPost(momentToText(m)));
     const xB = document.createElement("button");
-    xB.className = "small"; xB.textContent = "𝕏";
-    xB.onclick = () => openInX(momentToText(m));
+    xB.className = "small"; xB.textContent = t("momentX");
+    xB.onclick = () => openInX(decorateForPost(momentToText(m)));
     btns.appendChild(copyB); btns.appendChild(xB);
     row.appendChild(btns);
     panel.appendChild(row);
@@ -1430,43 +1607,39 @@ function renderMoments() {
 function renderLog() {
   const body = document.getElementById("logBody");
   if (state.events.length === 0) {
-    body.innerHTML = '<div class="logempty">まだ記録がありません。RECと同時に「計時開始」を押すと、' +
-      "ログの経過時間がそのクリップの再生位置と一致します。</div>";
+    body.innerHTML = '<div class="logempty">' + t("logEmpty") + '</div>';
     return;
   }
   body.innerHTML = "";
-  const scoreLines = computeScoreLines(); // ★v6: 毎回計算した正しい途中経過スコア
+  const scoreLines = computeScoreLines();
   state.events.forEach(e => {
     const row = document.createElement("div");
     const ac = accentClass(e.team);
-    const unresolved = e.type === "score" && e.pts == null; // ★v5: かんたんモードの未確定記録
-    // ★v5修正: 「いま操作中(pendingId)」と「直前に編集した(lastEditedId)」を区別せず、
-    //   どちらも同じ実線の枠で強調する(分かりやすさのため統一)
+    const unresolved = e.type === "score" && e.pts == null;
     const highlighted = e.id === pendingId || e.id === lastEditedId;
     row.className = "logrow";
     if (unresolved) row.style.background = "rgba(229,96,76,.08)";
     if (highlighted) {
-      // ★v5修正: 背景色と競合しないよう、枠線+太字で強調する
       row.style.outline = "2px solid " + (e.team === 0 ? "var(--home)" : "var(--away)");
       row.style.outlineOffset = "-2px";
       row.style.fontWeight = "800";
     }
-    // ★v7: 試合タイマー時間を主に、撮影時間は控えめに添える
     const gc = fmtGameClock(e);
     const timeCell = gc
       ? '<span class="lgameclock">' + gc + '</span><span class="lsubtime">録' + fmtElapsed(e.elapsed) + '</span>'
       : '<span class="lgameclock dim">--:--</span><span class="lsubtime">録' + fmtElapsed(e.elapsed) + '</span>';
+    const ptsText = e.type === "score"
+      ? (unresolved ? t("eventUnconfirmed") : "+" + e.pts)
+      : t("eventFoul");
     row.innerHTML =
       '<span class="lclip">' + (e.clip ? "C" + e.clip : "--") + "</span>" +
       '<span class="ltime">' + timeCell + "</span>" +
       '<span class="lq">' + e.q + "</span>" +
       '<span class="lteam ' + ac + '">' + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + "</span>" +
-      '<span class="lpts"' + (unresolved ? ' style="color:var(--danger)"' : '') + '>' +
-        (e.type === "score" ? (unresolved ? "未確定" : "+" + e.pts) : "ファウル") + "</span>" +
+      '<span class="lpts"' + (unresolved ? ' style="color:var(--danger)"' : '') + '>' + ptsText + "</span>" +
       '<span class="lscore">' + scoreLines[e.id] + "</span>" +
-      '<button class="lcopy" data-act="copy" title="マーカー名をコピー">⎘</button>';
+      '<button class="lcopy" data-act="copy" title="' + t("logCopyTitle") + '">⎘</button>';
     row.onclick = () => { pendingId = e.id; changeTypeOpen = null; lastEditedId = null; deleteConfirmId = null; clearTimeout(deleteConfirmTimer); renderPending(); renderLog(); };
-    // ★v6: コピーボタンは行タップ(選手修正)と干渉しないよう伝播を止める
     const copyBtn = row.querySelector('[data-act="copy"]');
     if (copyBtn) copyBtn.onclick = (ev) => { ev.stopPropagation(); copyText(eventToMarkerText(e)); };
     body.appendChild(row);
@@ -1484,18 +1657,83 @@ function renderLiveButton() {
   if (!btn) return;
   const moment = detectMoment();
   if (moment) {
-    btn.textContent = "📣 投稿どき: " + moment.label;
-    btn.classList.add("moment"); // 強調表示用
+    btn.textContent = t("liveMomentBtn", { label: moment.label });
+    btn.classList.add("moment");
   } else {
-    btn.textContent = "📣 実況素材をコピー";
+    btn.textContent = t("liveCopyBtn");
     btn.classList.remove("moment");
   }
 }
 
 // ============================================================
-// 初期化(ページを開いたときに1回だけ走る処理)
+// ★v8: applyLang — 言語変更時にHTMLの静的テキストを一括更新する
+// ============================================================
+function applyLang() {
+  document.getElementById("htmlRoot").lang = langMode;
+  document.getElementById("langBtn").textContent = t("langToggle");
+  // ログヘッダー
+  const lh = document.getElementById("logHeaderLabel");
+  if (lh) lh.textContent = t("logHeader");
+  const leh = document.getElementById("logEditHintLabel");
+  if (leh) leh.textContent = t("logEditHint");
+  // フッター
+  const ft = document.getElementById("footerLabel");
+  if (ft) ft.textContent = t("footer");
+  // 設定パネル static ラベル
+  const els = {
+    qLenLabel: "qLenLabel", qLenNote: "qLenNote",
+    postSettingsLabel: "postSettingsLabelEl", postNote: "postNoteEl",
+    backupLabel: "backupLabelEl", backupNote: "backupNoteEl",
+    clipNote: "clipNoteEl",
+  };
+  for (const [key, id] of Object.entries(els)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = t(key);
+  }
+  // input placeholders
+  const ti = document.getElementById("tournamentInput");
+  if (ti) ti.placeholder = t("tournamentPlaceholder");
+  const hi = document.getElementById("hashtagsInput");
+  if (hi) hi.placeholder = t("hashtagsPlaceholder");
+  const r0 = document.getElementById("roster0");
+  if (r0) r0.placeholder = t("rosterPlaceholder");
+  const r1 = document.getElementById("roster1");
+  if (r1) r1.placeholder = t("rosterPlaceholder");
+  // ボタン初期テキスト
+  const liveCopyBtn = document.getElementById("liveCopyBtn");
+  if (liveCopyBtn && !liveCopyBtn.classList.contains("moment")) liveCopyBtn.textContent = t("liveCopyBtn");
+  const livePostBtn = document.getElementById("livePostBtn");
+  if (livePostBtn) livePostBtn.textContent = t("livePostBtn");
+  const backupExportBtn = document.getElementById("backupExportBtn");
+  if (backupExportBtn) backupExportBtn.textContent = t("backupExport");
+  const backupImportBtn = document.getElementById("backupImportBtn");
+  if (backupImportBtn) backupImportBtn.textContent = t("backupImport");
+  // undoBtn / csvBtn — テキストはrenderOps内でも設定されるが、disabled状態のテキストをここで初期化
+  const undoBtn = document.getElementById("undoBtn");
+  if (undoBtn) undoBtn.textContent = t("undoBtn");
+  const csvBtn = document.getElementById("csvBtn");
+  if (csvBtn) csvBtn.textContent = t("csvBtn");
+  // トグルボタン(設定・箱・節目)は開閉状態に依存するため、現状を見て更新
+  const sp = document.getElementById("settingsPanel");
+  const st = document.getElementById("settingsToggle");
+  if (sp && st) st.textContent = sp.classList.contains("hidden") ? t("settingsOpen") : t("settingsClose");
+  const bp = document.getElementById("boxPanel");
+  const bt = document.getElementById("boxToggle");
+  if (bp && bt) bt.textContent = bp.classList.contains("hidden") ? t("boxOpen") : t("boxClose");
+  const mp = document.getElementById("momentsPanel");
+  const mto = document.getElementById("momentsToggle");
+  if (mp && mto) mto.textContent = mp.classList.contains("hidden") ? t("momentsOpen") : t("momentsClose");
+  // renderAll は mode が初期化された後(langBtn押下時)のみ呼ぶ。
+  // 起動時の applyLang() は静的テキストの適用だけ行い、renderAll は別途呼ばれる。
+  if (typeof mode !== "undefined") {
+    renderAll();
+    if (mode === "quick") renderQuick();
+  }
+}
+
 // ============================================================
 load();
+loadLang(); // ★v8: 言語設定を復元
 renderBoard();      // チームカードの骨組みを作る(以後は数字だけ更新)
 renderAll();
 
@@ -1506,6 +1744,23 @@ renderAll();
   input.oninput = () => { state.roster[i] = input.value; save(); };
 });
 
+// ★v7: 大会名・ハッシュタグの入力
+(() => {
+  const tEl = document.getElementById("tournamentInput");
+  const hEl = document.getElementById("hashtagsInput");
+  if (tEl) { tEl.value = state.tournament || ""; tEl.oninput = () => { state.tournament = tEl.value; save(); }; }
+  if (hEl) { hEl.value = state.hashtags || ""; hEl.oninput = () => { state.hashtags = hEl.value; save(); }; }
+})();
+
+// ★v8: 言語ボタン
+document.getElementById("langBtn").onclick = () => {
+  langMode = langMode === "ja" ? "en" : "ja";
+  saveLang();
+  applyLang();
+};
+
+applyLang(); // ★v8: 起動時の言語を適用(静的テキストのみ。renderAllはrenderBoard後に呼ばれる)
+
 // 各ボタン
 document.getElementById("clockBtn").onclick = handleClockButton;
 document.getElementById("undoBtn").onclick = undo;
@@ -1513,17 +1768,14 @@ document.getElementById("csvBtn").onclick = exportCSV;
 // ★v6: 実況素材をコピー(Xへの投稿や、Claudeに渡して実況文化する素材)
 //   節目(逆転・同点・クォーター終了)が検知されていれば、その見出しを含めてコピーする。
 document.getElementById("liveCopyBtn").onclick = () => {
-  if (state.events.length === 0) { showToast("まだ記録がありません"); return; }
+  if (state.events.length === 0) { showToast(t("toastNoRecord")); return; }
   const moment = detectMoment();
-  copyText(buildMomentText(moment));
+  copyText(decorateForPost(buildMomentText(moment)));
 };
-// ★v7: Xの投稿画面を実況素材入りで開く(Web Intent)
-//   Xアプリがあればアプリの投稿画面、なければブラウザのX投稿画面が、本文入りで開く。
-//   APIキーや認証は不要(単なるhttpsリンク)。日本語のためURLエンコードは必須。
 document.getElementById("livePostBtn").onclick = () => {
-  if (state.events.length === 0) { showToast("まだ記録がありません"); return; }
+  if (state.events.length === 0) { showToast(t("toastNoRecord")); return; }
   const moment = detectMoment();
-  openInX(buildMomentText(moment));
+  openInX(decorateForPost(buildMomentText(moment)));
 };
 function openInX(text) {
   const url = "https://twitter.com/intent/tweet?text=" + encodeURIComponent(text);
@@ -1540,28 +1792,26 @@ document.getElementById("clipPlus").onclick = () => {
 document.getElementById("settingsToggle").onclick = function () {
   const p = document.getElementById("settingsPanel");
   p.classList.toggle("hidden");
-  this.textContent = p.classList.contains("hidden") ? "▼ 設定(背番号・クリップ)" : "▲ 設定を閉じる";
+  this.textContent = p.classList.contains("hidden") ? t("settingsOpen") : t("settingsClose");
 };
 document.getElementById("boxToggle").onclick = function () {
   const p = document.getElementById("boxPanel");
   p.classList.toggle("hidden");
-  this.textContent = p.classList.contains("hidden") ? "▼ 選手別集計" : "▲ 選手別集計を閉じる";
+  this.textContent = p.classList.contains("hidden") ? t("boxOpen") : t("boxClose");
   renderBox();
 };
 
-// ★v7: 節目の振り返りトグル
 document.getElementById("momentsToggle").onclick = function () {
   const p = document.getElementById("momentsPanel");
   p.classList.toggle("hidden");
-  this.textContent = p.classList.contains("hidden") ? "▼ 節目の振り返り" : "▲ 節目の振り返りを閉じる";
+  this.textContent = p.classList.contains("hidden") ? t("momentsOpen") : t("momentsClose");
   renderMoments();
 };
 
 // ★v6: バックアップの書き出し/読み込み
 document.getElementById("backupExportBtn").onclick = exportBackup;document.getElementById("backupImportBtn").onclick = () => {
-  // 既に記録がある場合は、上書きになることを確認してから読み込む
   if (state.events.length > 0) {
-    if (!confirm("現在の記録に上書きされます。先に「この試合を書き出す」で保存しておくことをおすすめします。読み込みを続けますか?")) return;
+    if (!confirm(t("confirmOverwrite"))) return;
   }
   document.getElementById("backupFileInput").click();
 };
@@ -1577,14 +1827,6 @@ setInterval(renderClock, 1000);
 // ============================================================
 // ★v5: かんたんモード(quick mode)
 // ============================================================
-const MODE_KEY = "bball_mode_v1";
-let mode = "detail";          // "detail" | "quick"
-let modeManual = false;       // 手動切替済みなら向き変化で上書きしない
-let wakeLock = null;
-let wakeOn = false;
-let holdTimer = null;
-let holdFired = false;
-const HOLD_MS = 500; // 長押し判定(ファウル)
 
 function isLandscape() {
   return window.matchMedia("(orientation: landscape)").matches;
@@ -1612,14 +1854,13 @@ function applyMode() {
   if (mode === "quick") {
     document.body.classList.add("quick");
     quickScreen.classList.remove("hidden");
-    toggle.textContent = "⊞ 詳細";
+    toggle.textContent = t("modeToDetail");
     renderQuick();
   } else {
     document.body.classList.remove("quick");
     quickScreen.classList.add("hidden");
-    toggle.textContent = "▦ かんたん";
+    toggle.textContent = t("modeToQuick");
     releaseWakeLock();
-    // ★v5: 未確定イベント(quickで記録したpts:null)があれば、一番新しいものを開いて促す
     if (!pendingId) {
       const unresolved = state.events.find(e => e.type === "score" && e.pts == null);
       if (unresolved) pendingId = unresolved.id;
@@ -1655,26 +1896,30 @@ document.getElementById("modeToggle").onclick = (ev) => {
 
 // ---- かんたんモードの表示更新 ----
 function renderQuick() {
-  state.teams.forEach((t, i) => {
-    document.getElementById("qzname" + i).textContent = t.name;
-    // ★v5修正: 主役の大きい数字は「未確定の記録件数」(=押した回数のカウンター)。
-    //   タップした瞬間にこの数字が増えることで、押せたことが一目でわかる。
+  state.teams.forEach((tm, i) => {
+    document.getElementById("qzname" + i).textContent = tm.name;
     const pendingCount = state.events.filter(e => e.team === i && e.type === "score" && e.pts == null).length;
     document.getElementById("qzscore" + i).textContent = pendingCount;
     document.getElementById("qzcount" + i).textContent =
-      "確定スコア " + t.score + " ・ ファウル " + t.fouls;
+      t("quickCountLabel", { score: tm.score, fouls: tm.fouls });
+    const sl = document.getElementById("qScoreLabel" + i);
+    if (sl) sl.textContent = t("quickScoreLabel");
+    const hint = document.getElementById("qHint" + i);
+    if (hint) hint.textContent = t("quickHint");
   });
+  document.getElementById("qUndoBtn").textContent = t("quickUndoBtn");
+  updateWakeBtn();
   const clockBtn = document.getElementById("qClockBtn");
   if (state.startAt) {
     const elapsed = Math.floor((Date.now() - state.startAt) / 1000);
     clockBtn.className = "qclockbtn running";
-    clockBtn.textContent = "● C" + state.clipNo + " " + fmtElapsed(elapsed);
+    clockBtn.textContent = t("quickClockRunning", { n: state.clipNo, t: fmtElapsed(elapsed) });
   } else {
     clockBtn.className = "qclockbtn";
-    clockBtn.textContent = "▶ 計時開始";
+    clockBtn.textContent = t("quickClockStart");
   }
   document.getElementById("qUndoBtn").style.visibility = state.events.length ? "visible" : "hidden";
-  renderQuickPlayerBar(); // ★v6: 番号待ち帯も更新
+  renderQuickPlayerBar();
 }
 
 // ---- かんたんモードのタップ/長押し ----
@@ -1698,9 +1943,9 @@ function renderQuickPlayerBar() {
   if (!quickWaitEventId) { bar.classList.add("hidden"); return; }
   const e = state.events.find(ev => ev.id === quickWaitEventId);
   if (!e) { bar.classList.add("hidden"); return; }
-  const what = e.type === "foul" ? "ファウル" : "得点";
+  const what = e.type === "foul" ? t("quickWhatFoul") : t("quickWhatScore");
   document.getElementById("qPlayerBarLabel").textContent =
-    (e.team === 0 ? state.teams[0].name : state.teams[1].name) + "の" + what + " 誰?";
+    t("quickPlayerWho", { team: (e.team === 0 ? state.teams[0].name : state.teams[1].name), what });
   const chips = document.getElementById("qPlayerBarChips");
   chips.innerHTML = "";
   rosterList(e.team).forEach(n => {
@@ -1712,15 +1957,14 @@ function renderQuickPlayerBar() {
       ev.stopPropagation();
       e.player = n;
       save();
-      renderQuickPlayerBar(); // 選択を反映(ハイライト)
+      renderQuickPlayerBar();
       renderQuick();
     };
     chips.appendChild(b);
   });
-  // 「あとで」= 番号なしで確定して帯を閉じる
   const skip = document.createElement("button");
   skip.className = "pbchip skip";
-  skip.textContent = "あとで";
+  skip.textContent = t("quickPlayerLater");
   skip.onclick = (ev) => { ev.stopPropagation(); quickWaitEventId = null; renderQuickPlayerBar(); };
   chips.appendChild(skip);
   bar.classList.remove("hidden");
@@ -1794,7 +2038,7 @@ document.getElementById("qUndoBtn").onclick = (ev) => {
 // ---- Wake Lock(画面オフ防止) ----
 async function requestWakeLock() {
   if (!("wakeLock" in navigator)) {
-    alert("このブラウザは画面オフ防止に対応していません。設定アプリで画面ロックの時間を長めにしてください。");
+    alert(t("alertWakeLockUnsupported"));
     return;
   }
   try {
@@ -1806,7 +2050,7 @@ async function requestWakeLock() {
     });
   } catch (e) {
     wakeOn = false;
-    alert("画面オフ防止を開始できませんでした。バッテリー設定によりブロックされる場合があります。");
+    alert(t("alertWakeLockFail"));
   }
   updateWakeBtn();
 }
@@ -1817,8 +2061,8 @@ function releaseWakeLock() {
 }
 function updateWakeBtn() {
   const b = document.getElementById("qWakeBtn");
-  if (wakeOn) { b.classList.add("on"); b.textContent = "画面オフ防止: ON"; }
-  else { b.classList.remove("on"); b.textContent = "画面オフ防止: OFF"; }
+  if (wakeOn) { b.classList.add("on"); b.textContent = t("quickWakeOn"); }
+  else { b.classList.remove("on"); b.textContent = t("quickWakeOff"); }
 }
 document.getElementById("qWakeBtn").onclick = (ev) => {
   ev.stopPropagation();
@@ -1837,6 +2081,7 @@ setInterval(() => { if (mode === "quick") renderQuick(); }, 1000);
 // ---- 初期化 ----
 loadMode();
 applyMode();
+applyLang(); // ★v8: mode初期化後に動的テキストも言語適用
 
 </script>
 </body>
