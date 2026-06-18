@@ -381,6 +381,7 @@
   <div style="margin-bottom:10px">
     <div id="postSettingsLabelEl" style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">X投稿用</div>
     <input class="rinput" id="tournamentInput" placeholder="大会名(例: 令和7年度新人戦 第4支部大会)">
+    <input class="rinput" id="roundInput" placeholder="ラウンド・試合(例: 5回戦)">
     <input class="rinput" id="hashtagsInput" placeholder="ハッシュタグ(例: #新人戦 #中大杉並)">
     <div id="postNoteEl" class="clipnote">投稿の先頭に大会名+対戦カード、末尾にハッシュタグが入ります。空欄なら省略されます。</div>
   </div>
@@ -472,8 +473,9 @@ const LANG = {
     qLen10label:"10分",qLen10note:"通常",qLen12label:"12分",qLen12note:"大人",
     postSettingsLabel:"X投稿用",
     tournamentPlaceholder:"大会名(例: 令和7年度新人戦 第4支部大会)",
+    roundPlaceholder:"ラウンド・試合(例: 5回戦)",
     hashtagsPlaceholder:"ハッシュタグ(例: #新人戦 #中大杉並)",
-    postNote:"投稿の先頭に大会名+対戦カード、末尾にハッシュタグが入ります。空欄なら省略されます。",
+    postNote:"投稿の先頭に「大会名 ラウンド」と「対戦カード」が2行で入り、末尾にハッシュタグが入ります。空欄の項目は省略されます。",
     rosterLabel:"{name} の背番号(カンマ区切り。例: 4,5,7,10)",
     rosterPlaceholder:"未登録なら選手チップは出ません",
     clipLabel:"クリップ番号の復旧(現在: {status})",clipNotStarted:"未開始",clipStatus:"クリップ{n}",
@@ -542,8 +544,9 @@ const LANG = {
     qLen10label:"10 min",qLen10note:"Standard",qLen12label:"12 min",qLen12note:"Senior",
     postSettingsLabel:"Post on X",
     tournamentPlaceholder:"Tournament name (e.g. Spring Championship 2025)",
+    roundPlaceholder:"Round / game (e.g. Round 5)",
     hashtagsPlaceholder:"Hashtags (e.g. #SpringChamp #TeamName)",
-    postNote:"Tournament name + matchup at top, hashtags at bottom. Leave blank to omit.",
+    postNote:"The top two lines show 'Tournament Round' and the matchup, with hashtags at the bottom. Empty fields are omitted.",
     rosterLabel:"{name} jersey numbers (comma-separated, e.g. 4,5,7,10)",
     rosterPlaceholder:"Leave blank to skip player chips",
     clipLabel:"Clip No. (current: {status})",clipNotStarted:"not started",clipStatus:"Clip {n}",
@@ -620,6 +623,7 @@ let state = {
   quarterMinutes: 10,   // ★v7: クォーターの長さ(分)。ミニバス6/練習8/通常10/大人12
   quarterStarts: {},    // ★v7: 各クォーター開始時の撮影経過秒 { "1Q": 123, ... } 同期点
   tournament: "",       // ★v7: 大会名(投稿文の先頭に入れる)
+  round: "",            // ★v8: ラウンド/試合名(例: 5回戦)。大会名と同じ行に入れる
   hashtags: "",         // ★v7: ハッシュタグ(自由入力。投稿文の末尾に入れる)
 };
 let pendingId = null;     // 選手選択中のイベントID(保存しない一時状態)
@@ -656,6 +660,7 @@ function load() {
         quarterMinutes: d.quarterMinutes ?? 10, // ★v7
         quarterStarts: d.quarterStarts ?? {},   // ★v7
         tournament: d.tournament ?? "",          // ★v7
+        round: d.round ?? "",                    // ★v8
         hashtags: d.hashtags ?? "",              // ★v7
       };
       // ★v6: 旧表記(Q1〜Q4)を新表記(1Q〜4Q)へ変換
@@ -964,14 +969,23 @@ function momentToText(m) {
   return head + "\n" + line;
 }
 
-// ★v7: 投稿文に大会名(先頭)と対戦カード、ハッシュタグ(末尾)を付ける。
-//   大会名・ハッシュタグが空ならその行は省略する。X投稿・コピー直前に通す。
+// ★v8: 投稿文を組み立てる。先頭に大会名+ラウンド(1行目)と対戦カード(2行目)、
+//   末尾にハッシュタグを付ける。空の要素はその行ごと省略する。X投稿・コピー直前に通す。
+//   例:
+//     令和8年度高校総体東京都予選 5回戦
+//     都立駒場 vs 成立学園
+//     【3Q終了】...本文...
+//     #高校バスケ
 function decorateForPost(body) {
   let out = "";
   const tour = (state.tournament || "").trim();
+  const round = (state.round || "").trim();
   const cap = state.teams[0].name + " vs " + state.teams[1].name;
-  // 先頭行: 大会名 + 対戦カード(大会名があれば「大会名 カード」、なければカードのみは付けない=本文に既にチーム名があるため)
-  if (tour) out += tour + " " + cap + "\n";
+  // 1行目: 大会名 + ラウンド(どちらか一方でも、両方でも、空でもOK)
+  const headline = [tour, round].filter(Boolean).join(" ");
+  if (headline) out += headline + "\n";
+  // 2行目: 対戦カード(大会名かラウンドがあるときだけ。本文に既にチーム名がある場合の重複を避ける)
+  if (headline) out += cap + "\n";
   out += body;
   const tags = (state.hashtags || "").trim();
   if (tags) out += "\n" + tags;
@@ -1170,6 +1184,9 @@ function handleResetButton() {
   gameEnded = false; // ★v6: 試合終了状態も解除
   quickWaitEventId = null; // ★v6: 番号待ちもクリア
   state.quarterStarts = {}; // ★v7: 同期点はクリア(クォーター長は次の試合でも使うので維持)
+  state.round = ""; // ★v8: ラウンドは試合ごとに変わるのでクリア(大会名・ハッシュタグは維持)
+  const rEl = document.getElementById("roundInput");
+  if (rEl) rEl.value = "";
   disarmConfirm();
   save(); renderAll();
 }
@@ -1242,6 +1259,7 @@ function importBackup(file) {
         quarterMinutes: loaded.quarterMinutes ?? 10, // ★v7
         quarterStarts: loaded.quarterStarts ?? {},   // ★v7
         tournament: loaded.tournament ?? "",          // ★v7
+        round: loaded.round ?? "",                     // ★v8
         hashtags: loaded.hashtags ?? "",              // ★v7
       };
       // ★v6: 旧表記(Q1〜Q4)を新表記(1Q〜4Q)へ変換して互換性を保つ
@@ -1255,8 +1273,10 @@ function importBackup(file) {
         document.getElementById(id).value = state.roster[i];
       });
       const tEl = document.getElementById("tournamentInput");
+      const rEl = document.getElementById("roundInput");
       const hEl = document.getElementById("hashtagsInput");
       if (tEl) tEl.value = state.tournament || "";
+      if (rEl) rEl.value = state.round || "";
       if (hEl) hEl.value = state.hashtags || "";
       alert(t("alertImportDone"));
     } catch (e) {
@@ -1693,6 +1713,8 @@ function applyLang() {
   // input placeholders
   const ti = document.getElementById("tournamentInput");
   if (ti) ti.placeholder = t("tournamentPlaceholder");
+  const ri = document.getElementById("roundInput");
+  if (ri) ri.placeholder = t("roundPlaceholder");
   const hi = document.getElementById("hashtagsInput");
   if (hi) hi.placeholder = t("hashtagsPlaceholder");
   const r0 = document.getElementById("roster0");
@@ -1744,11 +1766,13 @@ renderAll();
   input.oninput = () => { state.roster[i] = input.value; save(); };
 });
 
-// ★v7: 大会名・ハッシュタグの入力
+// ★v7/v8: 大会名・ラウンド・ハッシュタグの入力
 (() => {
   const tEl = document.getElementById("tournamentInput");
+  const rEl = document.getElementById("roundInput");
   const hEl = document.getElementById("hashtagsInput");
   if (tEl) { tEl.value = state.tournament || ""; tEl.oninput = () => { state.tournament = tEl.value; save(); }; }
+  if (rEl) { rEl.value = state.round || ""; rEl.oninput = () => { state.round = rEl.value; save(); }; }
   if (hEl) { hEl.value = state.hashtags || ""; hEl.oninput = () => { state.hashtags = hEl.value; save(); }; }
 })();
 
