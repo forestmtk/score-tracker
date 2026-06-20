@@ -162,7 +162,7 @@
              border-top: 1px solid var(--line); padding-top: 10px; }
   .clipnote { font-size: 11px; color: var(--dim); margin-top: 6px; line-height: 1.5; }
 
-  .boxwrap { margin-top: 8px; display: flex; gap: 8px; }
+  .boxwrap { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
   .boxcard { flex: 1; background: var(--panel); border: 1px solid var(--line);
              border-radius: 12px; padding: 10px; }
   .boxhead { display: flex; justify-content: space-between; font-size: 12px;
@@ -389,6 +389,11 @@
   <input class="rinput" id="roster0" placeholder="未登録なら選手チップは出ません">
   <div class="rlabel t1" id="rlabel1"></div>
   <input class="rinput" id="roster1" placeholder="未登録なら選手チップは出ません">
+  <!-- ★v8: チーム情報のリセット(対戦カードが変わるとき用。スコアは「新しい試合」で消す) -->
+  <div style="margin-top:10px">
+    <button class="small" id="teamResetBtn" style="width:100%;min-height:40px"></button>
+    <div id="teamResetNoteEl" class="clipnote"></div>
+  </div>
   <div class="cliprow">
     <span style="font-size:12px;color:var(--dim);flex:1" id="clipLabel"></span>
     <button class="small" id="clipMinus" style="min-width:44px;min-height:38px;font-size:16px">−</button>
@@ -462,7 +467,11 @@ const LANG = {
     clockConfirm:"もう一度タップで停止(クリップ{n} {t})",
     qEnd:"終了",qEndConfirm:"もう一度で終了",
     foulLabel:"ファウル {n}",
-    undoBtn:"↩ 1つ取り消す",csvBtn:"CSV保存",resetBtn:"新しい試合",resetConfirm:"もう一度で全消去",
+    undoBtn:"↩ 1つ取り消す",csvBtn:"CSV保存",resetBtn:"新しい試合",resetConfirm:"もう一度でスコアを消す",
+    teamResetLabel:"チーム情報のリセット",
+    teamResetBtn:"チーム名・背番号を消す",
+    teamResetConfirm:"もう一度でチーム情報を消す",
+    teamResetNote:"対戦カードが変わるときに使います。チーム名はHOME/AWAYに戻り、背番号も空になります(大会名・ハッシュタグは残ります)。スコアやログは「新しい試合」で消します。",
     liveCopyBtn:"📣 実況素材をコピー",liveMomentBtn:"📣 投稿どき: {label}",livePostBtn:"𝕏 で投稿",
     settingsOpen:"▼ 設定(背番号・クリップ)",settingsClose:"▲ 設定を閉じる",
     boxOpen:"▼ 選手別集計",boxClose:"▲ 選手別集計を閉じる",
@@ -484,6 +493,9 @@ const LANG = {
     backupLabel:"データのバックアップ",backupExport:"この試合を書き出す",backupImport:"試合を読み込む",
     backupNote:"書き出すと試合データを1つのファイルに保存できます(端末の引っ越しや、iPhoneで記録→Macで編集の受け渡しにも)。読み込むと今の記録に上書きされます。",
     boxScoreHeader:"得点 / F",boxNoRecord:"記録なし",boxFoul:"F",
+    boxTextPts:"点",boxTextFoul:"F",boxTextNoNumber:"番号なし",
+    boxTextDisclaimer:"※個人の手集計のため、公式記録ではありません",
+    boxCopyBtn:"⎘ 集計をコピー",boxPostBtn:"𝕏 集計を投稿",
     pendUnresolved:"未確定の記録({clip}{elapsed} {team}): 何点?",
     pendChangeType:"種別を変更({clip}{elapsed} {team} ・ 現在: {what})",
     pendEditing:"修正中: {clip}{elapsed} の {what}({team}{player})",
@@ -533,7 +545,11 @@ const LANG = {
     clockConfirm:"Tap again to stop (Clip {n} {t})",
     qEnd:"End",qEndConfirm:"Confirm End",
     foulLabel:"Foul {n}",
-    undoBtn:"↩ Undo",csvBtn:"Save CSV",resetBtn:"New Game",resetConfirm:"Tap again to clear",
+    undoBtn:"↩ Undo",csvBtn:"Save CSV",resetBtn:"New Game",resetConfirm:"Tap again to clear score",
+    teamResetLabel:"Reset team info",
+    teamResetBtn:"Clear names & numbers",
+    teamResetConfirm:"Tap again to clear team info",
+    teamResetNote:"Use when the matchup changes. Team names revert to HOME/AWAY and jersey numbers are cleared (tournament name & hashtags are kept). Score and log are cleared with 'New Game'.",
     liveCopyBtn:"📣 Copy Live Text",liveMomentBtn:"📣 Post now: {label}",livePostBtn:"Post on 𝕏",
     settingsOpen:"▼ Settings (Roster / Clip)",settingsClose:"▲ Close Settings",
     boxOpen:"▼ Box Score",boxClose:"▲ Close Box Score",
@@ -555,6 +571,9 @@ const LANG = {
     backupLabel:"Backup",backupExport:"Export this game",backupImport:"Import game",
     backupNote:"Export to save game data (also useful for iPhone → Mac transfer). Import will overwrite current data.",
     boxScoreHeader:"PTS / F",boxNoRecord:"No records",boxFoul:"F",
+    boxTextPts:"pts",boxTextFoul:"F",boxTextNoNumber:"No number",
+    boxTextDisclaimer:"* Unofficial — manually tallied by an individual",
+    boxCopyBtn:"⎘ Copy box score",boxPostBtn:"𝕏 Post box score",
     pendUnresolved:"Unconfirmed ({clip}{elapsed} {team}): Points?",
     pendChangeType:"Change type ({clip}{elapsed} {team} · Now: {what})",
     pendEditing:"Editing: {clip}{elapsed} — {what} ({team}{player})",
@@ -1191,6 +1210,45 @@ function handleResetButton() {
   save(); renderAll();
 }
 
+// ★v8: チーム情報のリセット(対戦カードが変わるとき用)。
+//   チーム名→HOME/AWAY、背番号→空に戻す。スコア・ログ・大会名・ハッシュタグには触れない。
+//   二度押し確認付き(設定パネル内なので誤タップは起きにくいが、念のため統一)。
+let teamResetConfirm = false;
+let teamResetTimer = null;
+let teamResetArmedAt = 0;
+function handleTeamResetButton() {
+  const btn = document.getElementById("teamResetBtn");
+  if (!teamResetConfirm) {
+    teamResetConfirm = true;
+    teamResetArmedAt = Date.now();
+    clearTimeout(teamResetTimer);
+    teamResetTimer = setTimeout(() => {
+      teamResetConfirm = false;
+      btn.classList.remove("confirm");
+      btn.textContent = t("teamResetBtn");
+    }, 4000);
+    btn.classList.add("confirm");
+    btn.textContent = t("teamResetConfirm");
+    return;
+  }
+  // 確認直後のダブルタップ相当は無視
+  if (Date.now() - teamResetArmedAt < CONFIRM_COOLDOWN) return;
+  clearTimeout(teamResetTimer);
+  teamResetConfirm = false;
+  state.teams[0].name = "HOME";
+  state.teams[1].name = "AWAY";
+  state.roster = ["", ""];
+  // 入力欄の表示も戻す
+  document.getElementById("roster0").value = "";
+  document.getElementById("roster1").value = "";
+  btn.classList.remove("confirm");
+  btn.textContent = t("teamResetBtn");
+  save();
+  renderBoard(); // チーム名が変わるのでカードを作り直す
+  renderAll();
+  renderSettings();
+}
+
 // ---- CSV書き出し ----
 function exportCSV() {
   if (state.events.length === 0) return;
@@ -1294,6 +1352,36 @@ function boxScore(teamIdx) {
     if (e.type === "foul") totals[e.player].fouls += 1;
   }
   return Object.entries(totals).sort((a, b) => b[1].pts - a[1].pts);
+}
+
+// ★v8: 選手別集計をテキスト化する(コピー/X投稿用)。
+//   - 各チームの選手別 得点/ファウルを並べる
+//   - 番号未入力の得点・ファウルは「番号なし」としてまとめて注記(集計漏れ防止)
+//   - 末尾に「個人の手集計のため公式記録ではない」旨の注釈を必ず付ける
+function buildBoxScoreText() {
+  const h = state.teams[0], a = state.teams[1];
+  let text = h.name + " " + h.score + " - " + a.score + " " + a.name;
+  [0, 1].forEach(i => {
+    const rows = boxScore(i);
+    // 番号なし(player未入力)の得点・ファウルを別途集計
+    let noNumPts = 0, noNumFouls = 0;
+    for (const e of state.events) {
+      if (e.team !== i || e.player) continue;
+      if (e.type === "score" && e.pts != null) noNumPts += e.pts;
+      if (e.type === "foul") noNumFouls += 1;
+    }
+    if (rows.length === 0 && noNumPts === 0 && noNumFouls === 0) return;
+    text += "\n【" + state.teams[i].name + "】";
+    rows.forEach(([num, v]) => {
+      text += "\n#" + num + " " + v.pts + t("boxTextPts") + (v.fouls ? " / " + v.fouls + t("boxTextFoul") : "");
+    });
+    if (noNumPts > 0 || noNumFouls > 0) {
+      text += "\n" + t("boxTextNoNumber") + " " + noNumPts + t("boxTextPts") +
+        (noNumFouls ? " / " + noNumFouls + t("boxTextFoul") : "");
+    }
+  });
+  text += "\n" + t("boxTextDisclaimer");
+  return text;
 }
 
 // ============================================================
@@ -1585,6 +1673,24 @@ function renderBox() {
     card.innerHTML = inner;
     panel.appendChild(card);
   });
+  // ★v8: 集計のコピー/X投稿ボタン(記録があるときだけ表示)
+  if (state.events.length > 0) {
+    const btnRow = document.createElement("div");
+    btnRow.style.cssText = "display:flex;gap:8px;margin-top:2px;width:100%;flex-basis:100%";
+    const copyB = document.createElement("button");
+    copyB.className = "small";
+    copyB.style.cssText = "flex:2;min-height:40px";
+    copyB.textContent = t("boxCopyBtn");
+    copyB.onclick = () => copyText(decorateForPost(buildBoxScoreText()));
+    const postB = document.createElement("button");
+    postB.className = "small";
+    postB.style.cssText = "flex:1;min-height:40px";
+    postB.textContent = t("boxPostBtn");
+    postB.onclick = () => openInX(decorateForPost(buildBoxScoreText()));
+    btnRow.appendChild(copyB);
+    btnRow.appendChild(postB);
+    panel.appendChild(btnRow);
+  }
 }
 
 function renderMoments() {
@@ -1705,6 +1811,7 @@ function applyLang() {
     postSettingsLabel: "postSettingsLabelEl", postNote: "postNoteEl",
     backupLabel: "backupLabelEl", backupNote: "backupNoteEl",
     clipNote: "clipNoteEl",
+    teamResetNote: "teamResetNoteEl", // ★v8
   };
   for (const [key, id] of Object.entries(els)) {
     const el = document.getElementById(id);
@@ -1730,6 +1837,9 @@ function applyLang() {
   if (backupExportBtn) backupExportBtn.textContent = t("backupExport");
   const backupImportBtn = document.getElementById("backupImportBtn");
   if (backupImportBtn) backupImportBtn.textContent = t("backupImport");
+  // ★v8: チーム情報リセットボタン(確認中はそのラベルを維持)
+  const teamResetBtn = document.getElementById("teamResetBtn");
+  if (teamResetBtn) teamResetBtn.textContent = teamResetConfirm ? t("teamResetConfirm") : t("teamResetBtn");
   // undoBtn / csvBtn — テキストはrenderOps内でも設定されるが、disabled状態のテキストをここで初期化
   const undoBtn = document.getElementById("undoBtn");
   if (undoBtn) undoBtn.textContent = t("undoBtn");
@@ -1807,6 +1917,7 @@ function openInX(text) {
   window.open(url, "_blank");
 }
 document.getElementById("resetBtn").onclick = handleResetButton;
+document.getElementById("teamResetBtn").onclick = handleTeamResetButton; // ★v8
 document.getElementById("clipMinus").onclick = () => {
   state.clipNo = Math.max(0, state.clipNo - 1); save(); renderSettings(); renderClock();
 };
