@@ -161,6 +161,17 @@
     color: var(--home); background: rgba(255,178,46,.08); border: 1px dashed rgba(255,178,46,.5);
     border-radius: 8px; padding: 6px; margin: 3px 0;
   }
+  /* ★v8: 保存した試合の一覧 */
+  .arcrow {
+    display: flex; align-items: center; gap: 6px; padding: 8px; margin-top: 6px;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  }
+  .arcrow.current { border-color: var(--home); background: rgba(255,178,46,.08); }
+  .arcinfo { flex: 1; min-width: 0; }
+  .arcname { font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .arcmeta { font-size: 10px; color: var(--dim); margin-top: 2px; }
+  .arcbtn { flex: 0 0 auto; font-size: 12px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .arcbtn.warn { color: var(--danger); border-color: rgba(229,96,76,.4); }
 
   .oprow { display: flex; gap: 8px; margin-top: 10px; }
   #undoBtn {
@@ -476,6 +487,16 @@
     普段は使いません。RECの押し忘れや誤タップで、アプリの番号と実際の動画ファイル数が
     ズレたときだけ、ここで合わせ直します(ログのC番号=SDカード内の何本目か、を守るため)。
   </div>
+  <!-- ★v8: 試合の保存・読み込み(複数試合を端末内に貯めて行き来する) -->
+  <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
+    <div id="archiveLabelEl" style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">保存した試合</div>
+    <div style="display:flex;gap:8px;margin-bottom:6px">
+      <button class="small" id="archiveSaveBtn" style="flex:1;min-height:40px"></button>
+      <button class="small" id="archiveNewBtn" style="flex:1;min-height:40px"></button>
+    </div>
+    <div id="archiveStatusEl" class="clipnote"></div>
+    <div id="archiveListEl"></div>
+  </div>
   <!-- ★v6: データのバックアップ(書き出し/読み込み) -->
   <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
     <div id="backupLabelEl" style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">データのバックアップ</div>
@@ -571,6 +592,14 @@ const LANG = {
     clipMinus:"−",clipPlus:"＋",
     clipNote:"普段は使いません。RECの押し忘れや誤タップで、アプリの番号と実際の動画ファイル数がズレたときだけ、ここで合わせ直します(ログのC番号=SDカード内の何本目か、を守るため)。",
     backupLabel:"データのバックアップ",backupExport:"この試合を書き出す",backupImport:"試合を読み込む",
+    archiveLabel:"保存した試合",archiveSaveNew:"この試合を保存",archiveSaveOver:"上書き保存",archiveNew:"新しい試合を始める",
+    archiveSaved:"試合を保存しました",archiveUpdated:"試合を上書き保存しました",archiveSaveFail:"保存に失敗しました(容量不足の可能性)",
+    archiveEmpty:"まだ保存した試合はありません。「この試合を保存」で貯められます。",
+    archiveOpen:"開く",archiveDelete:"削除",archiveCurrent:"編集中",
+    archiveStatusNew:"未保存の試合(新規)",archiveStatusEditing:"保存済み「{name}」を編集中",
+    archiveConfirmOpen:"今の試合を保存してから「{name}」を開きますか?(キャンセルすると保存せず開きます)",
+    archiveConfirmDelete:"「{name}」を削除しますか?この操作は元に戻せません。",
+    archiveConfirmNew:"今の試合を保存してから新しい試合を始めますか?",
     backupNote:"書き出すと試合データを1つのファイルに保存できます(端末の引っ越しや、iPhoneで記録→Macで編集の受け渡しにも)。読み込むと今の記録に上書きされます。",
     boxScoreHeader:"得点 / F",boxNoRecord:"記録なし",boxFoul:"F",
     boxTextPts:"点",boxTextFoul:"F",boxTextNoNumber:"得点者不明",
@@ -666,6 +695,14 @@ const LANG = {
     clipMinus:"−",clipPlus:"＋",
     clipNote:"Normally not needed. Use only when app clip number is out of sync with actual video files.",
     backupLabel:"Backup",backupExport:"Export this game",backupImport:"Import game",
+    archiveLabel:"Saved games",archiveSaveNew:"Save this game",archiveSaveOver:"Save (overwrite)",archiveNew:"Start a new game",
+    archiveSaved:"Game saved",archiveUpdated:"Game updated",archiveSaveFail:"Save failed (storage may be full)",
+    archiveEmpty:"No saved games yet. Use 'Save this game' to keep them.",
+    archiveOpen:"Open",archiveDelete:"Delete",archiveCurrent:"editing",
+    archiveStatusNew:"Unsaved game (new)",archiveStatusEditing:"Editing saved '{name}'",
+    archiveConfirmOpen:"Save the current game before opening '{name}'? (Cancel = open without saving)",
+    archiveConfirmDelete:"Delete '{name}'? This cannot be undone.",
+    archiveConfirmNew:"Save the current game before starting a new one?",
     backupNote:"Export to save game data (also useful for iPhone → Mac transfer). Import will overwrite current data.",
     boxScoreHeader:"PTS / F",boxNoRecord:"No records",boxFoul:"F",
     boxTextPts:"pts",boxTextFoul:"F",boxTextNoNumber:"Unknown scorer",
@@ -725,6 +762,7 @@ const LANG = {
 
 const QUARTERS = ["1Q", "2Q", "3Q", "4Q", "OT"]; // 日本のバスケ表記(数字が前)
 const STORAGE_KEY = "bball_game_v2";
+const ARCHIVE_KEY = "bball_archive_v1"; // ★v8: 保存した試合のアーカイブ
 // ★v5: かんたんモード変数(applyLangより前に宣言が必要)
 const MODE_KEY = "bball_mode_v1";
 let mode = "detail";
@@ -750,6 +788,7 @@ let state = {
   tournament: "",       // ★v7: 大会名(投稿文の先頭に入れる)
   round: "",            // ★v8: ラウンド/試合名(例: 5回戦)。大会名と同じ行に入れる
   hashtags: "",         // ★v7: ハッシュタグ(自由入力。投稿文の末尾に入れる)
+  currentArchiveId: null, // ★v8: いまアーカイブのどの試合を編集中か(null=新規・未保存)
 };
 let pendingId = null;     // 選手選択中のイベントID(保存しない一時状態)
 let changeTypeOpen = null; // ★v5: 「種別を変更」UIを開いている対象のイベントID
@@ -789,6 +828,7 @@ function load() {
         tournament: d.tournament ?? "",          // ★v7
         round: d.round ?? "",                    // ★v8
         hashtags: d.hashtags ?? "",              // ★v7
+        currentArchiveId: d.currentArchiveId ?? null, // ★v8
       };
       // ★v6: 旧表記(Q1〜Q4)を新表記(1Q〜4Q)へ変換
       const qFix = { "Q1": "1Q", "Q2": "2Q", "Q3": "3Q", "Q4": "4Q" };
@@ -1583,6 +1623,7 @@ function handleResetButton() {
   quickWaitEventId = null; // ★v6: 番号待ちもクリア
   state.quarterStarts = {}; // ★v7: 同期点はクリア(クォーター長は次の試合でも使うので維持)
   state.round = ""; // ★v8: ラウンドは試合ごとに変わるのでクリア(大会名・ハッシュタグは維持)
+  state.currentArchiveId = null; // ★v8: 新しい試合なので「保存済み試合の編集中」状態を解除
   const rEl = document.getElementById("roundInput");
   if (rEl) rEl.value = "";
   disarmConfirm();
@@ -1659,6 +1700,184 @@ function exportCSV() {
 //   CSVは分析用で読み戻せないため、復元可能な形式を別に用意する。
 //   端末をまたいだ受け渡し(iPhoneで記録→Macで編集)にも使える。
 // ============================================================
+// ============================================================
+// ★v8: 試合アーカイブ(複数試合を端末内に保存し、行き来して編集する)
+//   各試合 = { id, name, savedAt, data(=state相当) }
+//   現役stateの currentArchiveId で「いまどの保存試合を編集中か」を覚える。
+// ============================================================
+function loadArchive() {
+  try {
+    const raw = localStorage.getItem(ARCHIVE_KEY);
+    if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) return a; }
+  } catch (e) { /* なければ空 */ }
+  return [];
+}
+function saveArchive(arr) {
+  try { localStorage.setItem(ARCHIVE_KEY, JSON.stringify(arr)); }
+  catch (e) { alert(t("archiveSaveFail")); }
+}
+// 現役stateから保存用データ(一時状態を除いたコピー)を作る
+function snapshotState() {
+  return {
+    teams: state.teams.map(tm => ({ name: tm.name, score: tm.score, fouls: tm.fouls })),
+    quarter: state.quarter,
+    events: state.events.map(e => ({ ...e })),
+    startAt: null, // 保存時は計時状態は持ち越さない
+    clipNo: state.clipNo,
+    roster: [...state.roster],
+    quarterMinutes: state.quarterMinutes,
+    quarterStarts: { ...state.quarterStarts },
+    tournament: state.tournament,
+    round: state.round,
+    hashtags: state.hashtags,
+  };
+}
+// 試合の自動命名(対戦カード + ラウンド)。空ならフォールバック。
+function autoGameName() {
+  const card = state.teams[0].name + " vs " + state.teams[1].name;
+  const r = (state.round || "").trim();
+  return (r ? r + " " : "") + card;
+}
+// 現在の試合をアーカイブに保存(currentArchiveId があれば上書き、なければ新規)
+function saveCurrentToArchive() {
+  const arr = loadArchive();
+  const now = new Date().toISOString();
+  if (state.currentArchiveId) {
+    // 上書き
+    const idx = arr.findIndex(g => g.id === state.currentArchiveId);
+    if (idx !== -1) {
+      arr[idx].data = snapshotState();
+      arr[idx].savedAt = now;
+      // 名前は自動更新しない(ユーザーが付けた名前を尊重)。ただし空なら自動命名。
+      if (!arr[idx].name) arr[idx].name = autoGameName();
+      saveArchive(arr);
+      showToast(t("archiveUpdated"));
+      return arr[idx].id;
+    }
+    // 見つからなければ新規として続行
+  }
+  const id = "g" + Date.now() + Math.floor(Math.random() * 1000);
+  arr.unshift({ id, name: autoGameName(), savedAt: now, data: snapshotState() });
+  saveArchive(arr);
+  state.currentArchiveId = id;
+  save();
+  showToast(t("archiveSaved"));
+  return id;
+}
+// アーカイブの試合を現役stateに読み込む(今の試合は呼び出し側で保存確認済みの前提)
+function loadFromArchive(id) {
+  const arr = loadArchive();
+  const g = arr.find(x => x.id === id);
+  if (!g || !g.data) return;
+  const d = g.data;
+  state = {
+    teams: d.teams,
+    quarter: d.quarter ?? 0,
+    events: (d.events ?? []).map(e => ({ ...e })),
+    startAt: null,
+    clipNo: d.clipNo ?? 0,
+    roster: d.roster ?? ["", ""],
+    quarterMinutes: d.quarterMinutes ?? 10,
+    quarterStarts: d.quarterStarts ?? {},
+    tournament: d.tournament ?? "",
+    round: d.round ?? "",
+    hashtags: d.hashtags ?? "",
+    currentArchiveId: id,
+  };
+  const qFix = { "Q1": "1Q", "Q2": "2Q", "Q3": "3Q", "Q4": "4Q" };
+  state.events.forEach(e => { if (qFix[e.q]) e.q = qFix[e.q]; });
+  pendingId = null; changeTypeOpen = null; lastEditedId = null;
+  deleteConfirmId = null; insertMode = false; pendingInsertAfterId = undefined;
+  gameEnded = false;
+  save();
+  renderBoard(); renderAll();
+  ["roster0", "roster1"].forEach((rid, i) => {
+    const el = document.getElementById(rid); if (el) el.value = state.roster[i];
+  });
+  syncSettingsInputs();
+}
+function deleteFromArchive(id) {
+  const arr = loadArchive().filter(g => g.id !== id);
+  saveArchive(arr);
+  if (state.currentArchiveId === id) { state.currentArchiveId = null; save(); }
+}
+function renameArchive(id, name) {
+  const arr = loadArchive();
+  const g = arr.find(x => x.id === id);
+  if (g) { g.name = name; saveArchive(arr); }
+}
+// 設定パネルの入力欄を現在のstateに同期(読み込み後に呼ぶ)
+function syncSettingsInputs() {
+  const map = { tournamentInput: "tournament", roundInput: "round", hashtagsInput: "hashtags" };
+  Object.entries(map).forEach(([id, key]) => {
+    const el = document.getElementById(id); if (el) el.value = state[key] || "";
+  });
+}
+
+// ★v8: 保存した試合の一覧と保存状態を描画
+function renderArchive() {
+  // 保存ボタンのラベル(新規 or 上書き)
+  const saveBtn = document.getElementById("archiveSaveBtn");
+  if (saveBtn) saveBtn.textContent = state.currentArchiveId ? t("archiveSaveOver") : t("archiveSaveNew");
+  // 状態表示
+  const statusEl = document.getElementById("archiveStatusEl");
+  if (statusEl) {
+    if (state.currentArchiveId) {
+      const arr = loadArchive();
+      const g = arr.find(x => x.id === state.currentArchiveId);
+      statusEl.textContent = t("archiveStatusEditing", { name: g ? g.name : "?" });
+    } else {
+      statusEl.textContent = t("archiveStatusNew");
+    }
+  }
+  // 一覧
+  const listEl = document.getElementById("archiveListEl");
+  if (!listEl) return;
+  const arr = loadArchive();
+  if (arr.length === 0) {
+    listEl.innerHTML = '<div class="clipnote">' + t("archiveEmpty") + '</div>';
+    return;
+  }
+  listEl.innerHTML = "";
+  arr.forEach(g => {
+    const row = document.createElement("div");
+    row.className = "arcrow" + (g.id === state.currentArchiveId ? " current" : "");
+    const score = (g.data && g.data.teams) ? (g.data.teams[0].score + "-" + g.data.teams[1].score) : "";
+    const dt = g.savedAt ? new Date(g.savedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+    const cur = g.id === state.currentArchiveId ? ' · ' + t("archiveCurrent") : "";
+    row.innerHTML =
+      '<div class="arcinfo"><div class="arcname">' + esc(g.name || "(no name)") + '</div>' +
+      '<div class="arcmeta">' + esc(score) + ' · ' + esc(dt) + cur + '</div></div>' +
+      '<button class="arcbtn" data-act="open">' + t("archiveOpen") + '</button>' +
+      '<button class="arcbtn warn" data-act="del">' + t("archiveDelete") + '</button>';
+    row.querySelector('[data-act="open"]').onclick = () => openArchiveGame(g.id);
+    row.querySelector('[data-act="del"]').onclick = () => deleteArchiveGame(g.id);
+    listEl.appendChild(row);
+  });
+}
+// 保存した試合を開く(今の試合の保存を促してから)
+function openArchiveGame(id) {
+  if (id === state.currentArchiveId) return; // すでに編集中
+  const arr = loadArchive();
+  const g = arr.find(x => x.id === id);
+  if (!g) return;
+  // 今の試合に記録があるなら、保存を促す
+  if (state.events.length > 0) {
+    const ok = confirm(t("archiveConfirmOpen", { name: g.name }));
+    if (ok) saveCurrentToArchive(); // OK=保存してから開く / キャンセル=保存せず開く
+  }
+  loadFromArchive(id);
+  renderArchive();
+}
+function deleteArchiveGame(id) {
+  const arr = loadArchive();
+  const g = arr.find(x => x.id === id);
+  if (!g) return;
+  if (!confirm(t("archiveConfirmDelete", { name: g.name }))) return;
+  deleteFromArchive(id);
+  renderArchive();
+}
+
 function exportBackup() {
   // バージョン情報を付けておくと、将来データ構造が変わっても対応しやすい
   const backup = { app: "score-tracker", version: 6, savedAt: new Date().toISOString(), state };
@@ -2503,6 +2722,12 @@ function applyLang() {
   if (backupExportBtn) backupExportBtn.textContent = t("backupExport");
   const backupImportBtn = document.getElementById("backupImportBtn");
   if (backupImportBtn) backupImportBtn.textContent = t("backupImport");
+  // ★v8: 保存した試合
+  const archiveLabelEl = document.getElementById("archiveLabelEl");
+  if (archiveLabelEl) archiveLabelEl.textContent = t("archiveLabel");
+  const archiveNewBtn = document.getElementById("archiveNewBtn");
+  if (archiveNewBtn) archiveNewBtn.textContent = t("archiveNew");
+  renderArchive();
   // ★v8: チーム情報リセットボタン(確認中はそのラベルを維持)
   const teamResetBtn = document.getElementById("teamResetBtn");
   if (teamResetBtn) teamResetBtn.textContent = teamResetConfirm ? t("teamResetConfirm") : t("teamResetBtn");
@@ -2591,6 +2816,7 @@ document.getElementById("settingsToggle").onclick = function () {
   const open = !p.classList.contains("hidden");
   this.textContent = open ? t("settingsClose") : t("settingsOpen");
   this.classList.toggle("open", open);
+  if (open) renderArchive(); // ★v8: 開いたとき保存した試合の一覧を更新
 };
 document.getElementById("boxToggle").onclick = function () {
   const p = document.getElementById("boxPanel");
@@ -2631,6 +2857,27 @@ document.getElementById("backupFileInput").onchange = (ev) => {
   const file = ev.target.files[0];
   if (file) importBackup(file);
   ev.target.value = ""; // 同じファイルを連続で選べるようにリセット
+};
+
+// ★v8: 試合の保存・新規ボタン
+document.getElementById("archiveSaveBtn").onclick = () => {
+  saveCurrentToArchive();
+  renderArchive();
+};
+document.getElementById("archiveNewBtn").onclick = () => {
+  // 今の試合に記録があれば保存を促す
+  if (state.events.length > 0) {
+    if (confirm(t("archiveConfirmNew"))) saveCurrentToArchive();
+  }
+  // 新しい試合へ(リセット)。currentArchiveId も null になる。
+  state.teams.forEach(tm => { tm.score = 0; tm.fouls = 0; });
+  state.quarter = 0; state.events = []; state.startAt = null; state.clipNo = 0;
+  state.quarterStarts = {}; state.round = ""; state.currentArchiveId = null;
+  pendingId = null; changeTypeOpen = null; lastEditedId = null;
+  gameEnded = false; quickWaitEventId = null;
+  insertMode = false; pendingInsertAfterId = undefined;
+  const rEl = document.getElementById("roundInput"); if (rEl) rEl.value = "";
+  save(); renderBoard(); renderAll(); renderArchive();
 };
 
 // 1秒ごとに計時表示を更新
