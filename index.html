@@ -150,6 +150,17 @@
   .small.moment { background: var(--home); color: #1A1205; border-color: transparent; }
   /* ★v8: 開いているトグルボタンは枠と文字を強調(閉じ忘れ防止) */
   .small.open { border-color: var(--danger); color: var(--danger); background: rgba(229,96,76,.08); }
+  /* ★v8: 記録挿入モード */
+  .insmodebtn {
+    font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--dim);
+  }
+  .insmodebtn.on { border-color: var(--home); color: var(--home); background: rgba(255,178,46,.1); }
+  .insbar {
+    display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700;
+    color: var(--home); background: rgba(255,178,46,.08); border: 1px dashed rgba(255,178,46,.5);
+    border-radius: 8px; padding: 6px; margin: 3px 0;
+  }
 
   .oprow { display: flex; gap: 8px; margin-top: 10px; }
   #undoBtn {
@@ -486,7 +497,7 @@
 <div class="logwrap">
   <div class="loghead">
     <span id="logHeaderLabel">PLAY-BY-PLAY(新しい順)</span>
-    <span id="logEditHintLabel" style="font-weight:400;letter-spacing:0">行タップで選手を修正</span>
+    <button id="insertModeBtn" class="insmodebtn" type="button"></button>
   </div>
   <div class="logbody" id="logBody"></div>
 </div>
@@ -578,6 +589,8 @@ const LANG = {
     eventScore:"得点",eventFoul:"ファウル",eventUnconfirmed:"未確定",
     eventPts:"+{n}P",eventFoulLabel:"foul",
     logHeader:"PLAY-BY-PLAY(新しい順)",logEditHint:"行タップで選手を修正",
+    insertModeOff:"＋挿入",insertModeOn:"挿入中(完了)",insertHere:"＋ ここに記録を挿入",
+    insertPickLabel:"挿入する得点を選択(チーム・点数)",insertCancel:"挿入をやめる",
     logEmpty:"まだ記録がありません。RECと同時に「計時開始」を押すと、ログの経過時間がそのクリップの再生位置と一致します。",
     logCopyTitle:"マーカー名をコピー",
     momentEmpty:"まだ節目がありません(逆転・同点・クォーター終了で出てきます)。",
@@ -670,6 +683,8 @@ const LANG = {
     eventScore:"score",eventFoul:"foul",eventUnconfirmed:"pending",
     eventPts:"+{n}P",eventFoulLabel:"foul",
     logHeader:"PLAY-BY-PLAY (newest first)",logEditHint:"Tap row to edit player",
+    insertModeOff:"＋Insert",insertModeOn:"Inserting (done)",insertHere:"＋ Insert a record here",
+    insertPickLabel:"Pick the score to insert (team & points)",insertCancel:"Cancel insert",
     logEmpty:"No records yet. Tap 'Start Timer' with REC so elapsed time matches the video clip.",
     logCopyTitle:"Copy marker name",
     momentEmpty:"No highlights yet (lead changes, ties, and quarter ends will appear here).",
@@ -742,6 +757,8 @@ let lastEditedId = null;  // ★v5修正: 直前に編集した行(パネルを�
 let deleteConfirmId = null; // ★v5: 削除の二度押し確認対象のイベントID
 let deleteConfirmTimer = null;
 let deleteConfirmArmedAt = 0; // ★v5修正: 削除確認になった時刻(誤連打防止)
+let insertMode = false;   // ★v8: 記録の挿入モード(ログの行間に「+」を表示)
+let pendingInsertAfterId = undefined; // ★v8: 挿入位置(afterId)を保持。undefined=挿入待ちなし
 let gameEndConfirm = false; // ★v6: 試合終了ボタンの二段階確認
 let gameEndTimer = null;
 let gameEnded = false; // ★v6: 試合終了状態(ハイライトを終了ボタンに移す。記録は続けられる)
@@ -1339,6 +1356,58 @@ function addFoul(teamIdx) {
   save(); renderAll();
 }
 
+// ★v8: 記録の挿入(1段階方式)。
+//   挿入バーを押すと、その位置(afterId)を覚えて、チーム+点数を選ぶパネルを出す。
+//   選んだ瞬間に「確定済みの得点」として正しい位置に差し込む。未確定状態を経由しない。
+//   afterId = 挿入位置の「上の行」のid(null=ログ先頭=最新)。
+function beginInsertAt(afterId) {
+  pendingInsertAfterId = (afterId === undefined ? null : afterId);
+  pendingId = null;       // 既存の編集パネルは閉じる
+  renderPending();        // 挿入用パネルを表示
+  renderLog();
+}
+function cancelInsert() {
+  pendingInsertAfterId = undefined;
+  renderPending(); renderLog();
+}
+// チームと点数を指定して、覚えた位置に確定済み得点を挿入する
+function commitInsert(teamIdx, pts) {
+  if (pendingInsertAfterId === undefined) return;
+  const afterId = pendingInsertAfterId;
+  // 挿入する配列インデックスを決める(eventsは新しい順)
+  let idx;
+  if (afterId == null) {
+    idx = 0;
+  } else {
+    const at = state.events.findIndex(ev => ev.id === afterId);
+    if (at === -1) { pendingInsertAfterId = undefined; return; }
+    idx = at + 1;
+  }
+  // 時系列で1つ前の記録から q / clip を引き継ぐ
+  const basePrev = state.events[idx] || state.events[idx - 1] || null;
+  const q = basePrev ? basePrev.q : QUARTERS[state.quarter];
+  const clip = basePrev ? basePrev.clip : null;
+  const e = {
+    id: Date.now() + Math.random(),
+    q,
+    team: teamIdx,
+    teamName: state.teams[teamIdx].name,
+    type: "score",
+    pts,                 // ★最初から確定(未確定を経由しない)
+    player: null,
+    clip,
+    elapsed: null,
+    clock: new Date().toLocaleTimeString("ja-JP"),
+    scoreLine: "",
+  };
+  state.events.splice(idx, 0, e);
+  state.teams[teamIdx].score += pts; // チーム合計にも反映
+  pendingInsertAfterId = undefined;
+  pendingId = e.id;       // 続けて選手番号を付けられるようにパネルを開く
+  lastEditedId = e.id;
+  save(); renderAll();
+}
+
 // ★v5: かんたんモードからの記録。
 //   得点(quickScore): pts未確定(null)。チームスコアはまだ加算しない
 //     → detailモードで点数を確定したとき addPoints と同じ加算処理を行う
@@ -1874,6 +1943,29 @@ function renderScores() {
 
 function renderPending() {
   const area = document.getElementById("pendingArea");
+
+  // ★v8: 記録の挿入パネル(チーム+点数を選んで確定挿入)
+  if (pendingInsertAfterId !== undefined) {
+    let inner = '<div class="pendbox"><div class="pendlabel">' + t("insertPickLabel") + '</div>';
+    [0, 1].forEach(ti => {
+      inner += '<div style="margin-bottom:6px"><div style="font-size:12px;color:var(--dim);margin-bottom:4px">' +
+        esc(state.teams[ti].name) + '</div><div class="chips">';
+      [1, 2, 3].forEach(p => {
+        inner += '<button class="chip ' + accentClass(ti) + 'chip" data-team="' + ti + '" data-pts="' + p +
+          '" style="font-size:20px">+' + p + '</button>';
+      });
+      inner += '</div></div>';
+    });
+    inner += '<div style="margin-top:6px"><button class="small" data-act="cancel" style="min-height:40px">' +
+      t("insertCancel") + '</button></div></div>';
+    area.innerHTML = inner;
+    area.querySelectorAll("[data-pts]").forEach(b =>
+      b.onclick = () => commitInsert(Number(b.dataset.team), Number(b.dataset.pts)));
+    const cancel = area.querySelector('[data-act="cancel"]');
+    if (cancel) cancel.onclick = () => cancelInsert();
+    return;
+  }
+
   const e = state.events.find(ev => ev.id === pendingId);
   if (!e) { area.innerHTML = ""; return; }
   const ac = accentClass(e.team);
@@ -1917,6 +2009,14 @@ function renderPending() {
     const clipStr = e.clip ? "C" + e.clip + " " : "";
     let inner = '<div class="pendbox ' + ac + '"><div class="pendlabel">' +
       t("pendUnresolved", { clip: clipStr, elapsed: fmtElapsed(e.elapsed), team: esc(e.teamName) }) + '</div>';
+    // ★v8: チーム切り替え(挿入記録やチーム取り違えの修正用)
+    inner += '<div style="margin-bottom:8px;display:flex;gap:6px">';
+    [0, 1].forEach(ti => {
+      const on = e.team === ti ? " sel" : "";
+      inner += '<button class="pchip ' + accentClass(ti) + 'chip' + on + '" data-team="' + ti +
+        '" style="flex:1;min-height:38px">' + esc(state.teams[ti].name) + '</button>';
+    });
+    inner += '</div>';
     inner += '<div class="chips">';
     [1, 2, 3].forEach(p => {
       inner += '<button class="chip ' + ac + 'chip" data-pts="' + p + '" style="font-size:22px">+' + p + "</button>";
@@ -1925,6 +2025,13 @@ function renderPending() {
     inner += '<button class="' + delCls + '" data-act="delete" style="min-height:44px">' + delLabel + '</button>';
     inner += '<button class="small" data-act="close" style="min-height:44px">' + t("pendClose") + '</button></div></div>';
     area.innerHTML = inner;
+    // チーム切り替え
+    area.querySelectorAll("[data-team]").forEach(b =>
+      b.onclick = () => {
+        const ti = Number(b.dataset.team);
+        e.team = ti; e.teamName = state.teams[ti].name;
+        save(); renderPending(); renderLog();
+      });
     area.querySelectorAll("[data-pts]").forEach(b =>
       b.onclick = () => confirmQuickScore(e.id, Number(b.dataset.pts)));
     const foulBtn = area.querySelector('[data-act="foul"]');
@@ -2263,7 +2370,22 @@ function renderLog() {
   }
   body.innerHTML = "";
   const scoreLines = computeScoreLines();
-  state.events.forEach(e => {
+  // ★v8: 挿入モード用「+」バーを作る。afterId の行の「下(古い側)」に挿入する。
+  const makeInsBar = (afterId) => {
+    const bar = document.createElement("button");
+    bar.type = "button";
+    bar.className = "insbar";
+    bar.textContent = t("insertHere");
+    bar.onclick = (ev) => { ev.stopPropagation(); beginInsertAt(afterId); };
+    return bar;
+  };
+  state.events.forEach((e, idx) => {
+    // 挿入モードなら、各行の「上」に挿入バーを置く(=この行より新しい側に入れる)
+    if (insertMode) {
+      // idx番目の行の上 = afterId は idx-1番目の行(なければ null=先頭)
+      const afterId = idx === 0 ? null : state.events[idx - 1].id;
+      body.appendChild(makeInsBar(afterId));
+    }
     const row = document.createElement("div");
     const ac = accentClass(e.team);
     const unresolved = e.type === "score" && e.pts == null;
@@ -2306,6 +2428,11 @@ function renderLog() {
     if (copyBtn) copyBtn.onclick = (ev) => { ev.stopPropagation(); copyText(eventToMarkerText(e)); };
     body.appendChild(row);
   });
+  // 末尾(一番古い記録の下)にも挿入バー
+  if (insertMode && state.events.length > 0) {
+    const lastId = state.events[state.events.length - 1].id;
+    body.appendChild(makeInsBar(lastId));
+  }
 }
 
 function renderAll() {
@@ -2336,8 +2463,8 @@ function applyLang() {
   // ログヘッダー
   const lh = document.getElementById("logHeaderLabel");
   if (lh) lh.textContent = t("logHeader");
-  const leh = document.getElementById("logEditHintLabel");
-  if (leh) leh.textContent = t("logEditHint");
+  const imb = document.getElementById("insertModeBtn");
+  if (imb) imb.textContent = insertMode ? t("insertModeOn") : t("insertModeOff");
   // フッター
   const ft = document.getElementById("footerLabel");
   if (ft) ft.textContent = t("footer");
@@ -2481,6 +2608,16 @@ document.getElementById("momentsToggle").onclick = function () {
   this.textContent = open ? t("momentsClose") : t("momentsOpen");
   this.classList.toggle("open", open);
   renderMoments();
+};
+
+// ★v8: 記録の挿入モードの切り替え
+document.getElementById("insertModeBtn").onclick = function () {
+  insertMode = !insertMode;
+  this.textContent = insertMode ? t("insertModeOn") : t("insertModeOff");
+  this.classList.toggle("on", insertMode);
+  if (!insertMode) pendingInsertAfterId = undefined; // 挿入モードを抜けたら挿入待ちも解除
+  renderPending();
+  renderLog();
 };
 
 // ★v6: バックアップの書き出し/読み込み
