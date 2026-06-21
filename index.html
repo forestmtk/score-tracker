@@ -581,13 +581,16 @@ const LANG = {
     logEmpty:"まだ記録がありません。RECと同時に「計時開始」を押すと、ログの経過時間がそのクリップの再生位置と一致します。",
     logCopyTitle:"マーカー名をコピー",
     momentEmpty:"まだ節目がありません(逆転・同点・クォーター終了で出てきます)。",
-    momentCopyAll:"全部まとめてコピー(AIに渡す用)",momentCopy:"⎘ コピー",momentX:"𝕏",
+    momentCopyAll:"⎘ まとめをコピー(要点・AI用)",momentCopyAllLong:"⎘ 実況用をコピー(生ログ入り・AI用)",momentCopy:"⎘ コピー",momentX:"𝕏",
     fullFinalScore:"最終スコア",fullByQuarter:"クォーター別",fullFlow:"試合の流れ",
     fullScorers:"得点者(全体)",fullNotes:"ひとこと",
+    fullPlayByPlay:"プレーバイプレー(時系列)",
+    fullPlayByPlayNote:"※得点者不明が多い場合は、その時間帯のチームの攻防として描写してください。",
     fullNoteForAI:"AIへの注意",
     fullUnknownAmount:"得点者を確認できなかった分",
     fullAiInstruction:"個人得点は確認できた分のみの最低値です。実際はこれより多い可能性があるため、個人の数字を断定せず「確認できた範囲で」という前提でまとめてください。",
     momentQEnd:"{q}終了",momentTie:"同点!",momentLeadChange:"{name}が逆転!",momentGameClockRemain:"残",
+    momentGapWiden:"{name}が{n}点差に突き放す",momentGapClose:"{name}が{n}点差に追い上げ",
     quickScoreLabel:"未確定の記録",quickCountLabel:"確定スコア {score} ・ ファウル {fouls}",
     quickHint:"タップ=得点 ・ 長押し=ファウル",quickUndoBtn:"↩ 直前を取り消す",
     quickWakeOff:"画面オフ防止: OFF",quickWakeOn:"画面オフ防止: ON",
@@ -670,13 +673,16 @@ const LANG = {
     logEmpty:"No records yet. Tap 'Start Timer' with REC so elapsed time matches the video clip.",
     logCopyTitle:"Copy marker name",
     momentEmpty:"No highlights yet (lead changes, ties, and quarter ends will appear here).",
-    momentCopyAll:"Copy all (for AI)",momentCopy:"⎘ Copy",momentX:"𝕏",
+    momentCopyAll:"⎘ Copy summary (for AI)",momentCopyAllLong:"⎘ Copy play-by-play (for AI)",momentCopy:"⎘ Copy",momentX:"𝕏",
     fullFinalScore:"Final score",fullByQuarter:"By quarter",fullFlow:"Game flow",
     fullScorers:"Scorers (total)",fullNotes:"Notes",
+    fullPlayByPlay:"Play-by-play (chronological)",
+    fullPlayByPlayNote:"* Where scorers are unknown, describe the play as a team-level exchange for that stretch.",
     fullNoteForAI:"Note for AI",
     fullUnknownAmount:"Points with unconfirmed scorer",
     fullAiInstruction:"Individual point totals are minimums (confirmed only). Actual totals may be higher, so please avoid stating individual numbers as definitive and frame them as 'as far as could be confirmed'.",
     momentQEnd:"End of {q}",momentTie:"Tied!",momentLeadChange:"{name} takes the lead!",momentGameClockRemain:"",
+    momentGapWiden:"{name} pulls ahead by {n}",momentGapClose:"{name} closes to within {n}",
     quickScoreLabel:"Unconfirmed",quickCountLabel:"Score {score} · Fouls {fouls}",
     quickHint:"Tap=Score · Hold=Foul",quickUndoBtn:"↩ Undo",
     quickWakeOff:"Keep Awake: OFF",quickWakeOn:"Keep Awake: ON",
@@ -1040,6 +1046,8 @@ function collectMoments() {
   const evs = [...state.events].reverse(); // 古い順
   let h = 0, a = 0;
   let prevQ = null;
+  let peakGapLine = 0;  // ★v8: これまでに到達した最大点差ライン(10刻み)
+  let lastCloseLine = 0; // ★v8: 最後に追い上げ節目として記録したライン
   for (const e of evs) {
     // クォーターの切り替わり = 前のクォーターの終了
     if (prevQ !== null && e.q !== prevQ) {
@@ -1063,12 +1071,37 @@ function collectMoments() {
           kind: "tie", label: t("momentTie"), q: e.q,
           gameClock: fmtGameClock(e), score: h + "-" + a, eventId: e.id,
         });
+        peakGapLine = 0; lastCloseLine = 0; // 同点になったら点差基準をリセット
       } else if (diffBefore !== 0 && diffAfter !== 0 && Math.sign(diffBefore) !== Math.sign(diffAfter)) {
         const leader = diffAfter > 0 ? state.teams[0].name : state.teams[1].name;
         moments.push({
           kind: "lead_change", label: t("momentLeadChange", { name: leader }), q: e.q,
           gameClock: fmtGameClock(e), score: h + "-" + a, eventId: e.id,
         });
+        peakGapLine = 0; lastCloseLine = 0; // 逆転したら点差基準をリセット(新リーダー基準で取り直す)
+      } else {
+        // ★v8: 点差の節目(10刻み)。広げた/縮めたの両方向を拾う。
+        //   往復による連発を防ぐため、「到達した最大点差ライン(peakGapLine)」を基準にする。
+        const absAfter = Math.abs(diffAfter);
+        const lineAfter = Math.floor(absAfter / 10) * 10;
+        const leaderName = diffAfter > 0 ? state.teams[0].name : state.teams[1].name;
+        const chaserName = diffAfter > 0 ? state.teams[1].name : state.teams[0].name;
+        if (lineAfter > peakGapLine && lineAfter >= 10) {
+          // 新たな最大点差ラインに到達(突き放す)
+          moments.push({
+            kind: "gap_widen", label: t("momentGapWiden", { name: leaderName, n: lineAfter }), q: e.q,
+            gameClock: fmtGameClock(e), score: h + "-" + a, eventId: e.id,
+          });
+          peakGapLine = lineAfter;
+          lastCloseLine = lineAfter; // 追い上げ基準もリセット
+        } else if (lineAfter >= 10 && lineAfter < lastCloseLine) {
+          // 最大点差から、さらに下のラインへ縮まった(追い上げ)。同じラインの往復では出ない。
+          moments.push({
+            kind: "gap_close", label: t("momentGapClose", { name: chaserName, n: lineAfter }), q: e.q,
+            gameClock: fmtGameClock(e), score: h + "-" + a, eventId: e.id,
+          });
+          lastCloseLine = lineAfter;
+        }
       }
     }
   }
@@ -1085,9 +1118,9 @@ function momentToText(m) {
 }
 
 // ★v8: AIに渡す用の「試合まるごと」素材テキスト。
-//   節目だけでなく、最終スコア・クォーター別得点と得点者・全体得点者・ひとことを盛り込む。
-//   これ1つをコピーしてAIに貼れば、豊かな実況まとめが作れる。
-function buildFullMatchText() {
+//   includeLog=false: ショート版(集計と節目)。試合レポート向き。
+//   includeLog=true:  セミロング版。末尾にプレーバイプレー(生ログ)を添える。実況向き。
+function buildFullMatchText(includeLog) {
   const h = state.teams[0], a = state.teams[1];
   const lines = [];
 
@@ -1187,6 +1220,33 @@ function buildFullMatchText() {
     lines.push(t("fullUnknownAmount") + ": " + noNumParts.join(" / "));
     lines.push(t("fullAiInstruction"));
   }
+
+  // 7) ★v8: セミロング版のみ — プレーバイプレー(生ログ)を時系列で添える
+  if (includeLog) {
+    const evs = [...state.events].reverse(); // 古い順
+    const logLines = [];
+    for (const e of evs) {
+      const tm = (e.team === 0 || e.team === 1) ? state.teams[e.team].name : "";
+      if (e.type === "score") {
+        if (e.pts == null) continue;
+        const who = e.player ? "#" + e.player : "(" + t("boxTextNoNumber") + ")";
+        logLines.push("[" + e.q + "] " + tm + " " + who + " +" + e.pts);
+      } else if (e.type === "foul") {
+        const who = e.player ? "#" + e.player : "(" + t("boxTextNoNumber") + ")";
+        logLines.push("[" + e.q + "] " + tm + " " + who + " " + t("eventFoul"));
+      } else if (e.type === "note") {
+        logLines.push("[" + e.q + "] " + (e.note || ""));
+      }
+    }
+    if (logLines.length) {
+      lines.push("");
+      lines.push("■ " + t("fullPlayByPlay"));
+      lines.push(t("fullPlayByPlayNote")); // 番号不明が多い場合の補足
+      lines.push(logLines.join("\n"));
+    }
+  }
+
+  lines.push("");
   lines.push(t("boxTextDisclaimer"));
 
   return lines.join("\n");
@@ -2062,14 +2122,26 @@ function renderMoments() {
   }
   const allBtn = document.createElement("button");
   allBtn.className = "small";
-  allBtn.style.cssText = "width:100%;min-height:38px;margin-bottom:8px";
+  allBtn.style.cssText = "width:100%;min-height:38px;margin-bottom:6px";
   allBtn.textContent = t("momentCopyAll");
-  allBtn.onclick = () => { copyText(buildFullMatchText()); }; // ★v8: 試合まるごとのリッチ素材
+  allBtn.onclick = () => { copyText(buildFullMatchText(false)); }; // ショート版(集計と節目)
   panel.appendChild(allBtn);
+  // ★v8: セミロング版(生ログ入り・実況向き)
+  const longBtn = document.createElement("button");
+  longBtn.className = "small";
+  longBtn.style.cssText = "width:100%;min-height:38px;margin-bottom:8px";
+  longBtn.textContent = t("momentCopyAllLong");
+  longBtn.onclick = () => { copyText(buildFullMatchText(true)); };
+  panel.appendChild(longBtn);
   moments.forEach(m => {
     const row = document.createElement("div");
     row.className = "momentrow";
-    const kindColor = m.kind === "quarter_end" ? "var(--dim)" : (m.kind === "tie" ? "var(--home)" : "var(--away)");
+    let kindColor;
+    if (m.kind === "quarter_end") kindColor = "var(--dim)";
+    else if (m.kind === "tie") kindColor = "var(--home)";
+    else if (m.kind === "lead_change") kindColor = "var(--away)";
+    else if (m.kind === "gap_widen" || m.kind === "gap_close") kindColor = "var(--text)"; // 点差の節目は控えめに
+    else kindColor = "var(--away)";
     const remain = t("momentGameClockRemain");
     row.innerHTML =
       '<div class="mtop"><span class="mlabel" style="color:' + kindColor + '">' + esc(m.label) + '</span>' +
