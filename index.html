@@ -66,8 +66,18 @@
   .teamcard.t0 { border-top: 3px solid var(--home); }
   .teamcard.t1 { border-top: 3px solid var(--away); }
   .tname {
-    width: 100%; background: transparent; border: none; outline: none;
-    font-weight: 800; font-size: 15px; text-align: center; letter-spacing: .08em;
+    width: 100%; background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; outline: none; padding: 7px 4px;
+    font-weight: 900; font-size: 22px; text-align: center; letter-spacing: .04em;
+  }
+  .tname:focus { border-color: var(--text); background: rgba(255,255,255,.08); }
+  /* ★v8: 未入力(HOME/AWAYのまま)は「ここに入力して」と強めに促す */
+  .tname.unset {
+    border-style: dashed; border-color: var(--dim);
+    color: var(--dim) !important; font-weight: 700; font-size: 17px;
+  }
+  .tnamehint {
+    text-align: center; font-size: 10px; color: var(--dim); margin-top: 2px; min-height: 12px;
   }
   .t0 .tname, .t0 .score, .t0 .ptbtn { color: var(--home); }
   .t1 .tname, .t1 .score, .t1 .ptbtn { color: var(--away); }
@@ -146,6 +156,39 @@
 
   .toggles { display: flex; gap: 8px; margin-top: 8px; }
   .toggles .small { flex: 1; }
+
+  /* ★v8: ひとこと投稿行 */
+  .noterow { display: flex; gap: 6px; margin-top: 8px; align-items: stretch; }
+  .noteinput {
+    flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); font-size: 15px; padding: 8px 10px; outline: none;
+  }
+  .notepreset {
+    flex: 0 0 auto; max-width: 38%; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); font-size: 13px; padding: 8px 4px; outline: none;
+  }
+  .noteteam {
+    flex: 0 0 auto; width: 38px; border-radius: 8px; font-weight: 900; font-size: 16px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--dim);
+  }
+  /* 未選択でもチームカラーで色分け(得点ボタンと同じ系統) */
+  .noteteam.t0 { border: 1px solid rgba(255,178,46,.4); background: rgba(255,178,46,.1); color: var(--home); }
+  .noteteam.t1 { border: 1px solid rgba(91,200,245,.4); background: rgba(91,200,245,.1); color: var(--away); }
+  /* 選択中はベタ塗りでくっきり */
+  .noteteam.t0.on { background: var(--home); color: #1a1205; border-color: var(--home); }
+  .noteteam.t1.on { background: var(--away); color: #06222e; border-color: var(--away); }
+  .notepost {
+    flex: 0 0 auto; width: 40px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); font-weight: 800; font-size: 15px;
+  }
+  /* ★v8: ひとこと投稿の背番号チップ */
+  .notechips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .notechips .nchip {
+    min-width: 40px; min-height: 38px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font-weight: 800; font-size: 14px; padding: 0 8px;
+  }
+  .notechips .nchip.t0 { border-color: var(--home); color: var(--home); }
+  .notechips .nchip.t1 { border-color: var(--away); color: var(--away); }
 
   .panelbox {
     margin-top: 8px; background: var(--panel); border: 1px solid var(--line);
@@ -352,25 +395,42 @@
 
 <div class="oprow">
   <button id="undoBtn" disabled></button>
-  <button id="csvBtn" disabled></button>
-  <button id="resetBtn" class="small"></button>
+  <button id="livePostBtn" class="small"></button>
 </div>
 
-<!-- ★v7: 撮影中によく使う実況系は、操作行の直下(スクロールせず届く位置)に置く -->
-<div class="toggles">
-  <button id="liveCopyBtn" class="small" style="flex:1"></button>
-  <button id="livePostBtn" class="small" style="flex:1"></button>
+<!-- ★v8: ひとこと投稿(出来事をその場で記録&X投稿。画面遷移なし) -->
+<div id="noteRow" class="noterow">
+  <input id="noteInput" class="noteinput" type="text" placeholder="">
+  <select id="notePreset" class="notepreset"></select>
+  <button id="noteTeam0" class="noteteam t0" type="button">H</button>
+  <button id="noteTeam1" class="noteteam t1" type="button">A</button>
+  <button id="notePostBtn" class="notepost" type="button">𝕏</button>
 </div>
+<!-- ★v8: H/A選択時に出る背番号チップ(タップで入力欄に #番号 を挿入) -->
+<div id="noteChips" class="notechips hidden"></div>
 
 <div class="toggles">
   <button id="settingsToggle" class="small"></button>
   <button id="boxToggle" class="small"></button>
 </div>
+<!-- ★v8: 試合中に使わないボタンは下にまとめる(節目の振り返り・CSV保存・新しい試合) -->
 <div class="toggles">
   <button id="momentsToggle" class="small" style="flex:1"></button>
+  <button id="csvBtn" class="small" style="flex:1" disabled></button>
+  <button id="resetBtn" class="small" style="flex:1"></button>
 </div>
 
 <div id="settingsPanel" class="panelbox hidden">
+  <!-- ★v8: 背番号は試合中に最も触るので一番上に配置 -->
+  <div class="rlabel t0" id="rlabel0"></div>
+  <input class="rinput" id="roster0" placeholder="未登録なら選手チップは出ません">
+  <div class="rlabel t1" id="rlabel1"></div>
+  <input class="rinput" id="roster1" placeholder="未登録なら選手チップは出ません">
+  <!-- ★v8: チーム情報のリセット(対戦カードが変わるとき用。スコアは「新しい試合」で消す) -->
+  <div style="margin-top:10px;margin-bottom:10px;border-bottom:1px solid var(--line);padding-bottom:10px">
+    <button class="small" id="teamResetBtn" style="width:100%;min-height:40px"></button>
+    <div id="teamResetNoteEl" class="clipnote"></div>
+  </div>
   <!-- ★v7: クォーターの長さ(試合タイマー時間の推定に使う) -->
   <div style="margin-bottom:10px">
     <div id="qLenLabel" style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">クォーターの長さ</div>
@@ -384,15 +444,6 @@
     <input class="rinput" id="roundInput" placeholder="ラウンド・試合(例: 5回戦)">
     <input class="rinput" id="hashtagsInput" placeholder="ハッシュタグ(例: #新人戦 #中大杉並)">
     <div id="postNoteEl" class="clipnote">投稿の先頭に大会名+対戦カード、末尾にハッシュタグが入ります。空欄なら省略されます。</div>
-  </div>
-  <div class="rlabel t0" id="rlabel0"></div>
-  <input class="rinput" id="roster0" placeholder="未登録なら選手チップは出ません">
-  <div class="rlabel t1" id="rlabel1"></div>
-  <input class="rinput" id="roster1" placeholder="未登録なら選手チップは出ません">
-  <!-- ★v8: チーム情報のリセット(対戦カードが変わるとき用。スコアは「新しい試合」で消す) -->
-  <div style="margin-top:10px">
-    <button class="small" id="teamResetBtn" style="width:100%;min-height:40px"></button>
-    <div id="teamResetNoteEl" class="clipnote"></div>
   </div>
   <div class="cliprow">
     <span style="font-size:12px;color:var(--dim);flex:1" id="clipLabel"></span>
@@ -473,6 +524,11 @@ const LANG = {
     teamResetConfirm:"もう一度でチーム情報を消す",
     teamResetNote:"対戦カードが変わるときに使います。チーム名はHOME/AWAYに戻り、背番号も空になります(大会名・ハッシュタグは残ります)。スコアやログは「新しい試合」で消します。",
     liveCopyBtn:"📣 実況素材をコピー",liveMomentBtn:"📣 投稿どき: {label}",livePostBtn:"𝕏 で投稿",
+    noteInputPlaceholder:"ひとこと(例: #12 を先に入れて…)",
+    notePresetDefault:"定型文…",
+    notePresets:["負傷で退場","連続得点!","タイムアウト","追い上げている!","3P決めた!"],
+    toastNoteEmpty:"ひとことを入力するか定型文を選んでください",
+    teamNameHint:"タップしてチーム名を入力",
     settingsOpen:"▼ 設定(背番号・クリップ)",settingsClose:"▲ 設定を閉じる",
     boxOpen:"▼ 選手別集計",boxClose:"▲ 選手別集計を閉じる",
     momentsOpen:"▼ 節目の振り返り",momentsClose:"▲ 節目の振り返りを閉じる",
@@ -493,7 +549,7 @@ const LANG = {
     backupLabel:"データのバックアップ",backupExport:"この試合を書き出す",backupImport:"試合を読み込む",
     backupNote:"書き出すと試合データを1つのファイルに保存できます(端末の引っ越しや、iPhoneで記録→Macで編集の受け渡しにも)。読み込むと今の記録に上書きされます。",
     boxScoreHeader:"得点 / F",boxNoRecord:"記録なし",boxFoul:"F",
-    boxTextPts:"点",boxTextFoul:"F",boxTextNoNumber:"番号なし",
+    boxTextPts:"点",boxTextFoul:"F",boxTextNoNumber:"得点者不明",
     boxTextDisclaimer:"※個人の手集計のため、公式記録ではありません",
     boxCopyBtn:"⎘ 集計をコピー",boxPostBtn:"𝕏 集計を投稿",
     pendUnresolved:"未確定の記録({clip}{elapsed} {team}): 何点?",
@@ -512,7 +568,9 @@ const LANG = {
     logEmpty:"まだ記録がありません。RECと同時に「計時開始」を押すと、ログの経過時間がそのクリップの再生位置と一致します。",
     logCopyTitle:"マーカー名をコピー",
     momentEmpty:"まだ節目がありません(逆転・同点・クォーター終了で出てきます)。",
-    momentCopyAll:"全部まとめてコピー({n}件・AIに渡す用)",momentCopy:"⎘ コピー",momentX:"𝕏",
+    momentCopyAll:"全部まとめてコピー(AIに渡す用)",momentCopy:"⎘ コピー",momentX:"𝕏",
+    fullFinalScore:"最終スコア",fullByQuarter:"クォーター別",fullFlow:"試合の流れ",
+    fullScorers:"得点者(全体)",fullNotes:"ひとこと",
     momentQEnd:"{q}終了",momentTie:"同点!",momentLeadChange:"{name}が逆転!",momentGameClockRemain:"残",
     quickScoreLabel:"未確定の記録",quickCountLabel:"確定スコア {score} ・ ファウル {fouls}",
     quickHint:"タップ=得点 ・ 長押し=ファウル",quickUndoBtn:"↩ 直前を取り消す",
@@ -551,6 +609,11 @@ const LANG = {
     teamResetConfirm:"Tap again to clear team info",
     teamResetNote:"Use when the matchup changes. Team names revert to HOME/AWAY and jersey numbers are cleared (tournament name & hashtags are kept). Score and log are cleared with 'New Game'.",
     liveCopyBtn:"📣 Copy Live Text",liveMomentBtn:"📣 Post now: {label}",livePostBtn:"Post on 𝕏",
+    noteInputPlaceholder:"A note (e.g. type #12 first…)",
+    notePresetDefault:"Preset…",
+    notePresets:["Injured, leaving","Scoring run!","Timeout","Closing the gap!","Hit a 3!"],
+    toastNoteEmpty:"Type a note or pick a preset",
+    teamNameHint:"Tap to enter team name",
     settingsOpen:"▼ Settings (Roster / Clip)",settingsClose:"▲ Close Settings",
     boxOpen:"▼ Box Score",boxClose:"▲ Close Box Score",
     momentsOpen:"▼ Highlights",momentsClose:"▲ Close Highlights",
@@ -571,7 +634,7 @@ const LANG = {
     backupLabel:"Backup",backupExport:"Export this game",backupImport:"Import game",
     backupNote:"Export to save game data (also useful for iPhone → Mac transfer). Import will overwrite current data.",
     boxScoreHeader:"PTS / F",boxNoRecord:"No records",boxFoul:"F",
-    boxTextPts:"pts",boxTextFoul:"F",boxTextNoNumber:"No number",
+    boxTextPts:"pts",boxTextFoul:"F",boxTextNoNumber:"Unknown scorer",
     boxTextDisclaimer:"* Unofficial — manually tallied by an individual",
     boxCopyBtn:"⎘ Copy box score",boxPostBtn:"𝕏 Post box score",
     pendUnresolved:"Unconfirmed ({clip}{elapsed} {team}): Points?",
@@ -589,7 +652,9 @@ const LANG = {
     logEmpty:"No records yet. Tap 'Start Timer' with REC so elapsed time matches the video clip.",
     logCopyTitle:"Copy marker name",
     momentEmpty:"No highlights yet (lead changes, ties, and quarter ends will appear here).",
-    momentCopyAll:"Copy all ({n} items — for AI)",momentCopy:"⎘ Copy",momentX:"𝕏",
+    momentCopyAll:"Copy all (for AI)",momentCopy:"⎘ Copy",momentX:"𝕏",
+    fullFinalScore:"Final score",fullByQuarter:"By quarter",fullFlow:"Game flow",
+    fullScorers:"Scorers (total)",fullNotes:"Notes",
     momentQEnd:"End of {q}",momentTie:"Tied!",momentLeadChange:"{name} takes the lead!",momentGameClockRemain:"",
     quickScoreLabel:"Unconfirmed",quickCountLabel:"Score {score} · Fouls {fouls}",
     quickHint:"Tap=Score · Hold=Foul",quickUndoBtn:"↩ Undo",
@@ -744,7 +809,7 @@ function esc(s) { // HTMLに文字列を埋め込むときの安全化
 function rosterList(i) {
   return state.roster[i].split(/[,、\s]+/).map(s => s.trim()).filter(Boolean);
 }
-function accentClass(i) { return i === 0 ? "t0" : "t1"; }
+function accentClass(i) { return i === 0 ? "t0" : (i === 1 ? "t1" : ""); }
 
 // ============================================================
 // ★v6: クリップボードへのコピー(編集用マーカー名・実況素材の出力口)
@@ -988,13 +1053,121 @@ function momentToText(m) {
   return head + "\n" + line;
 }
 
+// ★v8: AIに渡す用の「試合まるごと」素材テキスト。
+//   節目だけでなく、最終スコア・クォーター別得点と得点者・全体得点者・ひとことを盛り込む。
+//   これ1つをコピーしてAIに貼れば、豊かな実況まとめが作れる。
+function buildFullMatchText() {
+  const h = state.teams[0], a = state.teams[1];
+  const lines = [];
+
+  // 1) ヘッダー(大会名・ラウンド・対戦カード・最終スコア)
+  const tour = (state.tournament || "").trim();
+  const round = (state.round || "").trim();
+  const headline = [tour, round].filter(Boolean).join(" ");
+  if (headline) lines.push(headline);
+  lines.push(h.name + " vs " + a.name);
+  // 勝敗
+  let result = "";
+  if (h.score > a.score) result = "(" + t("liveResult_win", { name: h.name }) + ")";
+  else if (a.score > h.score) result = "(" + t("liveResult_win", { name: a.name }) + ")";
+  else result = "(" + t("liveResult_draw") + ")";
+  lines.push("■ " + t("fullFinalScore") + ": " + h.name + " " + h.score + " - " + a.score + " " + a.name + " " + result);
+
+  // 2) クォーター別(得点 + 得点者)。記録のあるクォーターだけ。
+  const qSections = [];
+  QUARTERS.forEach(q => {
+    const evs = state.events.filter(e => e.q === q);
+    if (evs.length === 0) return;
+    let qh = 0, qa = 0;
+    const scorers = [{}, {}];
+    for (const e of evs) {
+      if (e.type !== "score" || e.pts == null) continue;
+      if (e.team === 0) qh += e.pts; else qa += e.pts;
+      if (e.player && (e.team === 0 || e.team === 1)) scorers[e.team][e.player] = (scorers[e.team][e.player] || 0) + e.pts;
+    }
+    let sec = q + ": " + h.name + " " + qh + " - " + qa + " " + a.name;
+    [0, 1].forEach(i => {
+      const entries = Object.entries(scorers[i]).sort((x, y) => y[1] - x[1]);
+      if (entries.length) {
+        sec += "\n  " + state.teams[i].name + ": " + entries.map(([n, p]) => "#" + n + " " + p + t("boxTextPts")).join(", ");
+      }
+    });
+    qSections.push(sec);
+  });
+  if (qSections.length) {
+    lines.push("");
+    lines.push("■ " + t("fullByQuarter"));
+    lines.push(qSections.join("\n"));
+  }
+
+  // 3) 試合の流れ(節目の時系列)
+  const moments = collectMoments();
+  if (moments.length) {
+    lines.push("");
+    lines.push("■ " + t("fullFlow"));
+    moments.forEach(m => {
+      lines.push("[" + m.q + (m.gameClock ? " " + m.gameClock : "") + "] " + m.label + " (" + m.score + ")");
+    });
+  }
+
+  // 4) 全体得点者(番号付きのみ・多い順)+ 番号なし合計
+  const totalScorers = [{}, {}];
+  const noNum = [0, 0];
+  for (const e of state.events) {
+    if (e.type !== "score" || e.pts == null) continue;
+    if (e.team !== 0 && e.team !== 1) continue;
+    if (e.player) totalScorers[e.team][e.player] = (totalScorers[e.team][e.player] || 0) + e.pts;
+    else noNum[e.team] += e.pts;
+  }
+  const scorerLines = [];
+  [0, 1].forEach(i => {
+    const entries = Object.entries(totalScorers[i]).sort((x, y) => y[1] - x[1]);
+    if (entries.length || noNum[i] > 0) {
+      let s = state.teams[i].name + ": " + entries.map(([n, p]) => "#" + n + " " + p + t("boxTextPts")).join(", ");
+      if (noNum[i] > 0) s += (entries.length ? ", " : "") + t("boxTextNoNumber") + " " + noNum[i] + t("boxTextPts");
+      scorerLines.push(s);
+    }
+  });
+  if (scorerLines.length) {
+    lines.push("");
+    lines.push("■ " + t("fullScorers"));
+    lines.push(scorerLines.join("\n"));
+  }
+
+  // 5) ひとこと(出来事)一覧
+  const notes = state.events.filter(e => e.type === "note").slice().reverse(); // 時系列(古い順)
+  if (notes.length) {
+    lines.push("");
+    lines.push("■ " + t("fullNotes"));
+    notes.forEach(e => {
+      lines.push("[" + e.q + "] " + (e.note || ""));
+    });
+  }
+
+  // 6) 注釈
+  lines.push("");
+  lines.push(t("boxTextDisclaimer"));
+
+  return lines.join("\n");
+}
+
 // ★v8: 投稿文を組み立てる。先頭に大会名+ラウンド(1行目)と対戦カード(2行目)、
-//   末尾にハッシュタグを付ける。空の要素はその行ごと省略する。X投稿・コピー直前に通す。
+//   末尾にハッシュタグ(手入力 + チーム名から自動生成)を付ける。
+//   - 本文とハッシュタグの間は空行を1つ空ける
+//   - チーム名が初期値(HOME/AWAY)のときはタグにしない
+//   - チーム名のスペースは "_" に置換(Xでタグが途中で切れるのを防ぐ)
+//   - 手入力タグに既に含まれるチーム名タグは重複させない
 //   例:
 //     令和8年度高校総体東京都予選 5回戦
 //     都立駒場 vs 成立学園
 //     【3Q終了】...本文...
-//     #高校バスケ
+//
+//     #高校バスケ #都立駒場 #成立学園
+function teamHashtag(name) {
+  const n = (name || "").trim();
+  if (!n || n === "HOME" || n === "AWAY") return "";
+  return "#" + n.replace(/\s+/g, "_");
+}
 function decorateForPost(body) {
   let out = "";
   const tour = (state.tournament || "").trim();
@@ -1006,8 +1179,17 @@ function decorateForPost(body) {
   // 2行目: 対戦カード(大会名かラウンドがあるときだけ。本文に既にチーム名がある場合の重複を避ける)
   if (headline) out += cap + "\n";
   out += body;
-  const tags = (state.hashtags || "").trim();
-  if (tags) out += "\n" + tags;
+  // ハッシュタグ: 手入力 + チーム名タグ(自動)。重複は除く。
+  const manual = (state.hashtags || "").trim();
+  const tags = [];
+  if (manual) tags.push(manual);
+  [0, 1].forEach(i => {
+    const tag = teamHashtag(state.teams[i].name);
+    // 手入力タグや既に積んだタグに含まれていなければ足す
+    if (tag && !(manual + " " + tags.join(" ")).split(/\s+/).includes(tag)) tags.push(tag);
+  });
+  const tagLine = tags.join(" ").trim();
+  if (tagLine) out += "\n\n" + tagLine; // ★v8: 本文との間に空行
   return out;
 }
 const CONFIRM_COOLDOWN = 350; // ms。この時間内の2回目クリックはダブルタップとみなして無視
@@ -1073,6 +1255,32 @@ function addQuickFoul(teamIdx) {
   // addFoulは新しいイベントを先頭に積むので、それを取得して返す
   addFoul(teamIdx);
   return state.events[0]; // ★v6: 番号待ち用に作成イベントを返す
+}
+
+// ★v8: ひとこと(出来事)を記録する。得点・ファウルと同じイベント配列に時系列で積む。
+//   teamIdx は 0/1、またはチームなしのとき null。スコア・ファウルには影響しない。
+//   text は投稿/ログ表示に使う本文(例: "#12 3P決めた!")。
+function addNote(teamIdx, text) {
+  gameEnded = false;
+  const hasTeam = (teamIdx === 0 || teamIdx === 1);
+  const e = {
+    id: Date.now() + Math.random(),
+    q: QUARTERS[state.quarter],
+    team: hasTeam ? teamIdx : null,
+    teamName: hasTeam ? state.teams[teamIdx].name : "",
+    type: "note",
+    pts: null,
+    note: text,
+    player: null,
+    clip: state.startAt ? state.clipNo : null,
+    elapsed: state.startAt ? Math.floor((Date.now() - state.startAt) / 1000) : null,
+    clock: new Date().toLocaleTimeString("ja-JP"),
+    scoreLine: state.teams[0].score + "-" + state.teams[1].score,
+  };
+  state.events.unshift(e);
+  save();
+  renderAll();
+  return e;
 }
 // ★v5修正: イベントの種別・点数を変更する汎用関数。
 //   未確定(quick)からの確定、確定済みの記録のやり直し、どちらにも対応。
@@ -1458,9 +1666,31 @@ function renderBoard() {
 
     const name = document.createElement("input");
     name.className = "tname";
+    name.id = "tname" + i;
     name.value = tm.name;
-    name.oninput = () => { state.teams[i].name = name.value; save(); renderSettings(); };
+    // ★v8: 未入力(HOME/AWAYのまま)は破線枠で「入力して」と促す
+    const isUnset = (tm.name === "HOME" || tm.name === "AWAY" || tm.name.trim() === "");
+    if (isUnset) name.classList.add("unset");
+    name.oninput = () => {
+      state.teams[i].name = name.value;
+      const unset = (name.value === "HOME" || name.value === "AWAY" || name.value.trim() === "");
+      name.classList.toggle("unset", unset);
+      const hintEl = document.getElementById("tnamehint" + i);
+      if (hintEl) hintEl.textContent = unset ? t("teamNameHint") : "";
+      save();
+      renderSettings();
+      renderNoteChips(); // チーム名変更でチップ側の色などに追従
+    };
+    // タップで全選択(HOME/AWAYをすぐ打ち替えられる)
+    name.onfocus = () => { try { name.select(); } catch (e) {} };
     card.appendChild(name);
+
+    // ★v8: 未入力のときだけ出る小さなヒント
+    const hint = document.createElement("div");
+    hint.className = "tnamehint";
+    hint.id = "tnamehint" + i;
+    hint.textContent = isUnset ? t("teamNameHint") : "";
+    card.appendChild(hint);
 
     const score = document.createElement("div");
     score.className = "score";
@@ -1503,6 +1733,38 @@ function renderPending() {
   const e = state.events.find(ev => ev.id === pendingId);
   if (!e) { area.innerHTML = ""; return; }
   const ac = accentClass(e.team);
+
+  // ★v8: ひとこと(note)の修正パネル。本文表示 + 番号付与(任意) + 削除 + 閉じる。
+  if (e.type === "note") {
+    const clipStr = e.clip ? "C" + e.clip + " " : "";
+    const delLabel = deleteConfirmId === e.id ? t("pendDeleteConfirm") : t("pendDelete");
+    const delCls = "small warn" + (deleteConfirmId === e.id ? " confirm" : "");
+    let inner = '<div class="pendbox ' + (ac || "") + '"><div class="pendlabel">💬 ' +
+      clipStr + fmtElapsed(e.elapsed) + " " + esc(e.note || "") + '</div>';
+    inner += '<div style="margin-bottom:8px"><button class="' + delCls + '" data-act="delete">' + delLabel + '</button></div>';
+    // チームが選ばれている場合のみ、番号付与チップを出す
+    const nums = (e.team === 0 || e.team === 1) ? rosterList(e.team) : [];
+    if (nums.length > 0) {
+      inner += '<div class="chips">';
+      nums.forEach(n => {
+        const sel = e.player === n ? " sel" : "";
+        inner += '<button class="chip ' + ac + 'chip' + sel + '" data-num="' + esc(n) + '">#' + esc(n) + "</button>";
+      });
+      if (e.player) inner += '<button class="small warn" data-act="clear" style="min-height:44px">' + t("pendClear") + '</button>';
+      inner += '</div>';
+    }
+    inner += '<div style="margin-top:8px"><button class="small" data-act="close" style="min-height:44px">' + t("pendClose") + '</button></div></div>';
+    area.innerHTML = inner;
+    const deleteBtn = area.querySelector('[data-act="delete"]');
+    if (deleteBtn) deleteBtn.onclick = () => handleDeleteClick(e.id);
+    area.querySelectorAll(".chip").forEach(b =>
+      b.onclick = () => { e.player = b.dataset.num; lastEditedId = e.id; save(); renderAll(); });
+    const clear = area.querySelector('[data-act="clear"]');
+    if (clear) clear.onclick = () => { e.player = null; lastEditedId = e.id; save(); renderAll(); };
+    const close = area.querySelector('[data-act="close"]');
+    if (close) close.onclick = () => { pendingId = null; deleteConfirmId = null; renderPending(); renderLog(); };
+    return;
+  }
 
   // ★v5: 得点が未確定(かんたんモードで記録)の場合 → まず+1/+2/+3を選ぶ
   if (e.type === "score" && e.pts == null) {
@@ -1705,8 +1967,8 @@ function renderMoments() {
   const allBtn = document.createElement("button");
   allBtn.className = "small";
   allBtn.style.cssText = "width:100%;min-height:38px;margin-bottom:8px";
-  allBtn.textContent = t("momentCopyAll", { n: moments.length });
-  allBtn.onclick = () => { copyText(moments.map(momentToText).join("\n\n")); };
+  allBtn.textContent = t("momentCopyAll");
+  allBtn.onclick = () => { copyText(buildFullMatchText()); }; // ★v8: 試合まるごとのリッチ素材
   panel.appendChild(allBtn);
   moments.forEach(m => {
     const row = document.createElement("div");
@@ -1727,6 +1989,102 @@ function renderMoments() {
     btns.appendChild(copyB); btns.appendChild(xB);
     row.appendChild(btns);
     panel.appendChild(row);
+  });
+}
+
+// ★v8: ひとこと投稿の状態と処理
+let noteTeam = null; // null | 0 | 1
+function buildNoteText() {
+  const free = (document.getElementById("noteInput").value || "").trim();
+  const sel = document.getElementById("notePreset");
+  const preset = sel.value || "";
+  // 入力ボックス(左)→ 定型文(右)の順でつなげる
+  const core = [free, preset].filter(Boolean).join(" ").trim();
+  if (!core) return "";
+  // ★v8: H/Aを選んでいればチーム名を頭に付ける(どちらの#7か分かるように)
+  if (noteTeam === 0 || noteTeam === 1) {
+    return state.teams[noteTeam].name + " " + core;
+  }
+  return core;
+}
+function setupNoteRow() {
+  const input = document.getElementById("noteInput");
+  const sel = document.getElementById("notePreset");
+  const t0btn = document.getElementById("noteTeam0");
+  const t1btn = document.getElementById("noteTeam1");
+  const post = document.getElementById("notePostBtn");
+  // チームトグル(押すと選択+背番号チップ表示、もう一度押すと解除+チップ非表示)
+  t0btn.onclick = () => { noteTeam = (noteTeam === 0 ? null : 0); refreshNoteTeamButtons(); renderNoteChips(); };
+  t1btn.onclick = () => { noteTeam = (noteTeam === 1 ? null : 1); refreshNoteTeamButtons(); renderNoteChips(); };
+  // 投稿
+  post.onclick = () => {
+    // 空判定はチーム名を除いた本体(入力+定型文)で行う(チームだけ選んで投稿を防ぐ)
+    const core = [(input.value || "").trim(), sel.value || ""].filter(Boolean).join(" ").trim();
+    if (!core) { showToast(t("toastNoteEmpty")); return; }
+    const text = buildNoteText();
+    // 記録に残す + X投稿画面を開く(大会名・対戦カード・ハッシュタグは decorateForPost で付与)
+    addNote(noteTeam, text);
+    openInX(decorateForPost(text));
+    // 入力をクリア(チーム選択も解除)
+    input.value = "";
+    sel.value = "";
+    noteTeam = null;
+    refreshNoteTeamButtons();
+    renderNoteChips();
+  };
+}
+function refreshNoteTeamButtons() {
+  const t0btn = document.getElementById("noteTeam0");
+  const t1btn = document.getElementById("noteTeam1");
+  if (t0btn) t0btn.classList.toggle("on", noteTeam === 0);
+  if (t1btn) t1btn.classList.toggle("on", noteTeam === 1);
+}
+// ★v8: H/A選択中のチームの背番号チップを表示。タップで入力欄のカーソル位置に "#番号 " を挿入。
+function renderNoteChips() {
+  const wrap = document.getElementById("noteChips");
+  if (!wrap) return;
+  if (noteTeam !== 0 && noteTeam !== 1) { wrap.classList.add("hidden"); wrap.innerHTML = ""; return; }
+  const nums = rosterList(noteTeam);
+  if (nums.length === 0) { wrap.classList.add("hidden"); wrap.innerHTML = ""; return; }
+  wrap.innerHTML = "";
+  const cls = noteTeam === 0 ? "t0" : "t1";
+  nums.forEach(n => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "nchip " + cls;
+    b.textContent = "#" + n;
+    b.onclick = () => insertIntoNoteInput("#" + n + " ");
+    wrap.appendChild(b);
+  });
+  wrap.classList.remove("hidden");
+}
+// 入力欄のカーソル位置に文字列を挿入(途中挿入に対応)。挿入後フォーカスは維持。
+function insertIntoNoteInput(str) {
+  const input = document.getElementById("noteInput");
+  if (!input) return;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  const before = input.value.slice(0, start);
+  const after = input.value.slice(end);
+  input.value = before + str + after;
+  const pos = start + str.length;
+  // フォーカスを戻してカーソルを挿入直後へ
+  input.focus();
+  try { input.setSelectionRange(pos, pos); } catch (e) {}
+}
+// 定型文プルダウンの中身を言語に応じて作る
+function buildNotePresetOptions() {
+  const sel = document.getElementById("notePreset");
+  if (!sel) return;
+  sel.innerHTML = "";
+  const def = document.createElement("option");
+  def.value = ""; def.textContent = t("notePresetDefault");
+  sel.appendChild(def);
+  const presets = (LANG[langMode] && LANG[langMode].notePresets) || LANG.ja.notePresets;
+  presets.forEach(p => {
+    const o = document.createElement("option");
+    o.value = p; o.textContent = p;
+    sel.appendChild(o);
   });
 }
 
@@ -1754,16 +2112,20 @@ function renderLog() {
     const timeCell = gc
       ? '<span class="lgameclock">' + gc + '</span><span class="lsubtime">録' + fmtElapsed(e.elapsed) + '</span>'
       : '<span class="lgameclock dim">--:--</span><span class="lsubtime">録' + fmtElapsed(e.elapsed) + '</span>';
+    const isNote = e.type === "note";
     const ptsText = e.type === "score"
       ? (unresolved ? t("eventUnconfirmed") : "+" + e.pts)
-      : t("eventFoul");
+      : (isNote ? "💬" : t("eventFoul"));
+    const teamCell = isNote
+      ? '<span class="lteam ' + ac + '">' + (e.teamName ? esc(e.teamName) : "") + (e.player ? " #" + esc(e.player) : "") + " " + esc(e.note || "") + "</span>"
+      : '<span class="lteam ' + ac + '">' + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + "</span>";
     row.innerHTML =
       '<span class="lclip">' + (e.clip ? "C" + e.clip : "--") + "</span>" +
       '<span class="ltime">' + timeCell + "</span>" +
       '<span class="lq">' + e.q + "</span>" +
-      '<span class="lteam ' + ac + '">' + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + "</span>" +
+      teamCell +
       '<span class="lpts"' + (unresolved ? ' style="color:var(--danger)"' : '') + '>' + ptsText + "</span>" +
-      '<span class="lscore">' + scoreLines[e.id] + "</span>" +
+      '<span class="lscore">' + (isNote ? "" : scoreLines[e.id]) + "</span>" +
       '<button class="lcopy" data-act="copy" title="' + t("logCopyTitle") + '">⎘</button>';
     row.onclick = () => { pendingId = e.id; changeTypeOpen = null; lastEditedId = null; deleteConfirmId = null; clearTimeout(deleteConfirmTimer); renderPending(); renderLog(); };
     const copyBtn = row.querySelector('[data-act="copy"]');
@@ -1777,16 +2139,16 @@ function renderAll() {
   renderOps(); renderSettings(); renderBox(); renderLog(); renderLiveButton(); renderMoments();
 }
 
-// ★v6: 📣ボタンの表示を、検知した節目に応じて変える
+// ★v8: 節目を検知したら「𝕏で投稿」ボタンを黄色く光らせ、表示を変える(投稿どきの合図)
 function renderLiveButton() {
-  const btn = document.getElementById("liveCopyBtn");
+  const btn = document.getElementById("livePostBtn");
   if (!btn) return;
   const moment = detectMoment();
   if (moment) {
     btn.textContent = t("liveMomentBtn", { label: moment.label });
     btn.classList.add("moment");
   } else {
-    btn.textContent = t("liveCopyBtn");
+    btn.textContent = t("livePostBtn");
     btn.classList.remove("moment");
   }
 }
@@ -1824,15 +2186,18 @@ function applyLang() {
   if (ri) ri.placeholder = t("roundPlaceholder");
   const hi = document.getElementById("hashtagsInput");
   if (hi) hi.placeholder = t("hashtagsPlaceholder");
+  // ★v8: ひとこと投稿
+  const ni = document.getElementById("noteInput");
+  if (ni) ni.placeholder = t("noteInputPlaceholder");
+  buildNotePresetOptions();
   const r0 = document.getElementById("roster0");
   if (r0) r0.placeholder = t("rosterPlaceholder");
   const r1 = document.getElementById("roster1");
   if (r1) r1.placeholder = t("rosterPlaceholder");
   // ボタン初期テキスト
-  const liveCopyBtn = document.getElementById("liveCopyBtn");
-  if (liveCopyBtn && !liveCopyBtn.classList.contains("moment")) liveCopyBtn.textContent = t("liveCopyBtn");
+  // ★v8: 𝕏で投稿ボタンは節目検知中(.moment)はそのラベルを保つので、ここでは上書きしない
   const livePostBtn = document.getElementById("livePostBtn");
-  if (livePostBtn) livePostBtn.textContent = t("livePostBtn");
+  if (livePostBtn && !livePostBtn.classList.contains("moment")) livePostBtn.textContent = t("livePostBtn");
   const backupExportBtn = document.getElementById("backupExportBtn");
   if (backupExportBtn) backupExportBtn.textContent = t("backupExport");
   const backupImportBtn = document.getElementById("backupImportBtn");
@@ -1873,7 +2238,7 @@ renderAll();
 ["roster0", "roster1"].forEach((id, i) => {
   const input = document.getElementById(id);
   input.value = state.roster[i];
-  input.oninput = () => { state.roster[i] = input.value; save(); };
+  input.oninput = () => { state.roster[i] = input.value; save(); renderNoteChips(); };
 });
 
 // ★v7/v8: 大会名・ラウンド・ハッシュタグの入力
@@ -1893,19 +2258,14 @@ document.getElementById("langBtn").onclick = () => {
   applyLang();
 };
 
+setupNoteRow(); // ★v8: ひとこと投稿行の配線
 applyLang(); // ★v8: 起動時の言語を適用(静的テキストのみ。renderAllはrenderBoard後に呼ばれる)
 
 // 各ボタン
 document.getElementById("clockBtn").onclick = handleClockButton;
 document.getElementById("undoBtn").onclick = undo;
 document.getElementById("csvBtn").onclick = exportCSV;
-// ★v6: 実況素材をコピー(Xへの投稿や、Claudeに渡して実況文化する素材)
-//   節目(逆転・同点・クォーター終了)が検知されていれば、その見出しを含めてコピーする。
-document.getElementById("liveCopyBtn").onclick = () => {
-  if (state.events.length === 0) { showToast(t("toastNoRecord")); return; }
-  const moment = detectMoment();
-  copyText(decorateForPost(buildMomentText(moment)));
-};
+// ★v8: 𝕏で投稿。節目(逆転・同点・クォーター終了)が検知されていれば、その見出しを含めて投稿する。
 document.getElementById("livePostBtn").onclick = () => {
   if (state.events.length === 0) { showToast(t("toastNoRecord")); return; }
   const moment = detectMoment();
