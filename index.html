@@ -713,7 +713,6 @@ const STORAGE_KEY = "bball_game_v2";
 // ★v5: かんたんモード変数(applyLangより前に宣言が必要)
 const MODE_KEY = "bball_mode_v1";
 let mode = "detail";
-let modeManual = false;
 let wakeLock = null;
 let wakeOn = false;
 let holdTimer = null;
@@ -2504,23 +2503,18 @@ setInterval(renderClock, 1000);
 // ★v5: かんたんモード(quick mode)
 // ============================================================
 
-function isLandscape() {
-  return window.matchMedia("(orientation: landscape)").matches;
-}
-
 function loadMode() {
+  // ★v8: 向きによる自動切り替えは廃止。前回選んだモードを復元するだけ。
   try {
     const raw = localStorage.getItem(MODE_KEY);
     if (raw) {
       const d = JSON.parse(raw);
       mode = d.mode ?? mode;
-      modeManual = d.manual ?? false;
     }
-  } catch (e) { /* なければ向きから決める */ }
-  if (!modeManual) mode = isLandscape() ? "quick" : "detail";
+  } catch (e) { /* なければ既定(detail)のまま */ }
 }
 function saveMode() {
-  try { localStorage.setItem(MODE_KEY, JSON.stringify({ mode, manual: modeManual })); }
+  try { localStorage.setItem(MODE_KEY, JSON.stringify({ mode })); }
   catch (e) { /* 保存できなくても動作は継続 */ }
 }
 
@@ -2545,22 +2539,16 @@ function applyMode() {
   }
 }
 
-function setMode(next, manual) {
+function setMode(next) {
   mode = next;
-  if (manual) modeManual = true;
   saveMode();
   applyMode();
 }
-
-// 画面の向きが変わったとき: 手動切替していなければ追従する
-window.matchMedia("(orientation: landscape)").addEventListener("change", () => {
-  if (modeManual) return;
-  setMode(isLandscape() ? "quick" : "detail", false);
-});
+// ★v8: 画面の向きによる自動切り替えは廃止(モードは切り替えボタンでのみ変更)。
 
 document.getElementById("modeToggle").onclick = (ev) => {
   ev.stopPropagation();
-  setMode(mode === "quick" ? "detail" : "quick", true);
+  setMode(mode === "quick" ? "detail" : "quick");
 };
 // ★v5修正: modeToggleの上でのtouch/mouse操作が、背後のqzoneのタップ判定に
 //   伝わらないようにする(かんたんモード中、画面隅のボタンが押しにくい問題への対策)
