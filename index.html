@@ -571,6 +571,9 @@ const LANG = {
     momentCopyAll:"全部まとめてコピー(AIに渡す用)",momentCopy:"⎘ コピー",momentX:"𝕏",
     fullFinalScore:"最終スコア",fullByQuarter:"クォーター別",fullFlow:"試合の流れ",
     fullScorers:"得点者(全体)",fullNotes:"ひとこと",
+    fullNoteForAI:"AIへの注意",
+    fullUnknownAmount:"得点者を確認できなかった分",
+    fullAiInstruction:"個人得点は確認できた分のみの最低値です。実際はこれより多い可能性があるため、個人の数字を断定せず「確認できた範囲で」という前提でまとめてください。",
     momentQEnd:"{q}終了",momentTie:"同点!",momentLeadChange:"{name}が逆転!",momentGameClockRemain:"残",
     quickScoreLabel:"未確定の記録",quickCountLabel:"確定スコア {score} ・ ファウル {fouls}",
     quickHint:"タップ=得点 ・ 長押し=ファウル",quickUndoBtn:"↩ 直前を取り消す",
@@ -655,6 +658,9 @@ const LANG = {
     momentCopyAll:"Copy all (for AI)",momentCopy:"⎘ Copy",momentX:"𝕏",
     fullFinalScore:"Final score",fullByQuarter:"By quarter",fullFlow:"Game flow",
     fullScorers:"Scorers (total)",fullNotes:"Notes",
+    fullNoteForAI:"Note for AI",
+    fullUnknownAmount:"Points with unconfirmed scorer",
+    fullAiInstruction:"Individual point totals are minimums (confirmed only). Actual totals may be higher, so please avoid stating individual numbers as definitive and frame them as 'as far as could be confirmed'.",
     momentQEnd:"End of {q}",momentTie:"Tied!",momentLeadChange:"{name} takes the lead!",momentGameClockRemain:"",
     quickScoreLabel:"Unconfirmed",quickCountLabel:"Score {score} · Fouls {fouls}",
     quickHint:"Tap=Score · Hold=Foul",quickUndoBtn:"↩ Undo",
@@ -930,12 +936,16 @@ function buildQuarterSummary(q) {
   const evs = state.events.filter(e => e.q === q);
   let qh = 0, qa = 0;
   const scorers = [0, 1].map(() => ({}));
+  const noNum = [0, 0]; // ★v8: 得点者不明(番号未入力)の得点
   for (const e of evs) {
     if (e.type !== "score" || e.pts == null) continue;
     if (e.team === 0) qh += e.pts; else qa += e.pts;
+    if (e.team !== 0 && e.team !== 1) continue;
     if (e.player) {
       const ts = scorers[e.team];
       ts[e.player] = (ts[e.player] || 0) + e.pts;
+    } else {
+      noNum[e.team] += e.pts;
     }
   }
   const h = state.teams[0], a = state.teams[1];
@@ -943,9 +953,11 @@ function buildQuarterSummary(q) {
   text += "\n" + t("liveQScore", { q, home: h.name, hq: qh, away: a.name, aq: qa });
   [0, 1].forEach(i => {
     const entries = Object.entries(scorers[i]).sort((x, y) => y[1] - x[1]);
-    if (entries.length) {
-      text += "\n" + t("liveScorers", { team: state.teams[i].name }) +
-        entries.map(([n, p]) => t("livePlayerScore", { num: n, pts: p })).join(", ");
+    if (entries.length || noNum[i] > 0) {
+      const parts = entries.map(([n, p]) => t("livePlayerScore", { num: n, pts: p }));
+      // ★v8: 得点者不明分を併記(確認できた分だけではないことを示す)
+      if (noNum[i] > 0) parts.push(t("boxTextNoNumber") + " " + noNum[i] + t("boxTextPts"));
+      text += "\n" + t("liveScorers", { team: state.teams[i].name }) + parts.join(", ");
     }
   });
   return text;
@@ -975,15 +987,19 @@ function buildGameEndText() {
   if (qParts.length) text += "\n" + qParts.join("\n");
 
   const scorers = [{}, {}];
+  const noNum = [0, 0]; // ★v8: 得点者不明分
   for (const e of state.events) {
-    if (e.type !== "score" || e.pts == null || !e.player) continue;
-    scorers[e.team][e.player] = (scorers[e.team][e.player] || 0) + e.pts;
+    if (e.type !== "score" || e.pts == null) continue;
+    if (e.team !== 0 && e.team !== 1) continue;
+    if (e.player) scorers[e.team][e.player] = (scorers[e.team][e.player] || 0) + e.pts;
+    else noNum[e.team] += e.pts;
   }
   [0, 1].forEach(i => {
     const entries = Object.entries(scorers[i]).sort((x, y) => y[1] - x[1]);
-    if (entries.length) {
-      text += "\n" + t("liveScorers", { team: state.teams[i].name }) +
-        entries.map(([n, p]) => t("livePlayerScore", { num: n, pts: p })).join(", ");
+    if (entries.length || noNum[i] > 0) {
+      const parts = entries.map(([n, p]) => t("livePlayerScore", { num: n, pts: p }));
+      if (noNum[i] > 0) parts.push(t("boxTextNoNumber") + " " + noNum[i] + t("boxTextPts"));
+      text += "\n" + t("liveScorers", { team: state.teams[i].name }) + parts.join(", ");
     }
   });
   return text;
@@ -1144,8 +1160,18 @@ function buildFullMatchText() {
     });
   }
 
-  // 6) 注釈
+  // 6) 注釈 + AIへの指示(個人得点が確定値ではないことを明示)
   lines.push("");
+  // 不明分の合計を出して、量を明示する
+  const noNumParts = [];
+  [0, 1].forEach(i => {
+    if (noNum[i] > 0) noNumParts.push(state.teams[i].name + " " + noNum[i] + t("boxTextPts"));
+  });
+  if (noNumParts.length) {
+    lines.push("【" + t("fullNoteForAI") + "】");
+    lines.push(t("fullUnknownAmount") + ": " + noNumParts.join(" / "));
+    lines.push(t("fullAiInstruction"));
+  }
   lines.push(t("boxTextDisclaimer"));
 
   return lines.join("\n");
