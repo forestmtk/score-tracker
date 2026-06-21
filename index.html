@@ -81,6 +81,15 @@
   }
   .t0 .tname, .t0 .score, .t0 .ptbtn { color: var(--home); }
   .t1 .tname, .t1 .score, .t1 .ptbtn { color: var(--away); }
+  /* ★v8: 未確認得点の割合(スコアボード) */
+  .uncwrap { margin-top: 6px; min-height: 22px; }
+  .uncbar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.10); overflow: hidden; }
+  .uncbar-fill { height: 100%; background: var(--dim); opacity: .6; }
+  .t0 .uncbar-fill { background: var(--home); }
+  .t1 .uncbar-fill { background: var(--away); }
+  .uncbar-fill.t0fill { background: var(--home); }
+  .uncbar-fill.t1fill { background: var(--away); }
+  .unctext { font-size: 10px; text-align: center; margin-top: 2px; }
   .score {
     font-size: 72px; font-weight: 900; line-height: 1.05;
     font-variant-numeric: tabular-nums; margin: 2px 0 6px;
@@ -139,6 +148,8 @@
   .small.confirm { background: var(--danger); color: #fff; border-color: transparent; }
   /* ★v6: 投稿どき(節目)を検知したときの📣ボタン強調 */
   .small.moment { background: var(--home); color: #1A1205; border-color: transparent; }
+  /* ★v8: 開いているトグルボタンは枠と文字を強調(閉じ忘れ防止) */
+  .small.open { border-color: var(--danger); color: var(--danger); background: rgba(229,96,76,.08); }
 
   .oprow { display: flex; gap: 8px; margin-top: 10px; }
   #undoBtn {
@@ -394,8 +405,8 @@
 <div id="pendingArea"></div>
 
 <div class="oprow">
-  <button id="undoBtn" disabled></button>
-  <button id="livePostBtn" class="small"></button>
+  <button id="undoBtn" disabled style="flex:1"></button>
+  <button id="livePostBtn" class="small" style="flex:1"></button>
 </div>
 
 <!-- ★v8: ひとこと投稿(出来事をその場で記録&X投稿。画面遷移なし) -->
@@ -529,6 +540,8 @@ const LANG = {
     notePresets:["負傷で退場","連続得点!","タイムアウト","追い上げている!","3P決めた!"],
     toastNoteEmpty:"ひとことを入力するか定型文を選んでください",
     teamNameHint:"タップしてチーム名を入力",
+    uncLabel:"未確認 {pct}%",
+    uncPanelLabel:"得点者の確認状況",
     settingsOpen:"▼ 設定(背番号・クリップ)",settingsClose:"▲ 設定を閉じる",
     boxOpen:"▼ 選手別集計",boxClose:"▲ 選手別集計を閉じる",
     momentsOpen:"▼ 節目の振り返り",momentsClose:"▲ 節目の振り返りを閉じる",
@@ -617,6 +630,8 @@ const LANG = {
     notePresets:["Injured, leaving","Scoring run!","Timeout","Closing the gap!","Hit a 3!"],
     toastNoteEmpty:"Type a note or pick a preset",
     teamNameHint:"Tap to enter team name",
+    uncLabel:"Unconfirmed {pct}%",
+    uncPanelLabel:"Scorer confirmation",
     settingsOpen:"▼ Settings (Roster / Clip)",settingsClose:"▲ Close Settings",
     boxOpen:"▼ Box Score",boxClose:"▲ Close Box Score",
     momentsOpen:"▼ Highlights",momentsClose:"▲ Close Highlights",
@@ -1381,7 +1396,9 @@ function handleDeleteClick(eventId) {
 function assignPlayer(num) {
   const e = state.events.find(e => e.id === pendingId);
   if (e) e.player = num;
-  lastEditedId = pendingId; // ★v5修正: パネルを閉じてもこの行のハイライトは残す
+  // ★v8: 番号を付けたらパネルは閉じる。ただし直した行は強くハイライトして残す
+  //   (どの行を直したか見失わず、続けて別の行を直したり、付け間違いをやり直したりしやすいように)。
+  lastEditedId = pendingId;
   pendingId = null;
   changeTypeOpen = null;
   deleteConfirmId = null; clearTimeout(deleteConfirmTimer);
@@ -1588,6 +1605,24 @@ function boxScore(teamIdx) {
   return Object.entries(totals).sort((a, b) => b[1].pts - a[1].pts);
 }
 
+// ★v8: チームの得点のうち、得点者を確認できていない割合を返す。
+//   { confirmed, unknown, total, ratio } — ratio は未確認の割合(0〜1)。得点0なら ratio=0。
+function unconfirmedStats(teamIdx) {
+  let confirmed = 0, unknown = 0;
+  for (const e of state.events) {
+    if (e.team !== teamIdx || e.type !== "score" || e.pts == null) continue;
+    if (e.player) confirmed += e.pts; else unknown += e.pts;
+  }
+  const total = confirmed + unknown;
+  return { confirmed, unknown, total, ratio: total > 0 ? unknown / total : 0 };
+}
+// 未確認割合に応じた色(低いほど目立たない。30%超で注意、50%超で警告)
+function unconfirmedColor(ratio) {
+  if (ratio >= 0.5) return "var(--danger)";
+  if (ratio >= 0.3) return "var(--home)"; // オレンジ系=注意
+  return "var(--dim)";
+}
+
 // ★v8: 選手別集計をテキスト化する(コピー/X投稿用)。
 //   - 各チームの選手別 得点/ファウルを並べる
 //   - 番号未入力の得点・ファウルは「番号なし」としてまとめて注記(集計漏れ防止)
@@ -1742,7 +1777,30 @@ function renderBoard() {
     foul.onclick = () => addFoul(i);
     card.appendChild(foul);
 
+    // ★v8: 未確認得点の割合(細い帯+小さな数字)。試合中の取りこぼしに気づくため。
+    const unc = document.createElement("div");
+    unc.className = "uncwrap";
+    unc.id = "unc" + i;
+    card.appendChild(unc);
+
     board.appendChild(card);
+  });
+  renderUnconfirmed(); // 帯の中身を描画
+}
+
+// ★v8: スコアボードの未確認割合(帯+数字)を更新する
+function renderUnconfirmed() {
+  state.teams.forEach((tm, i) => {
+    const wrap = document.getElementById("unc" + i);
+    if (!wrap) return;
+    const s = unconfirmedStats(i);
+    if (s.total === 0) { wrap.innerHTML = ""; return; }
+    const pct = Math.round(s.ratio * 100);
+    const col = unconfirmedColor(s.ratio);
+    const confPct = 100 - pct;
+    wrap.innerHTML =
+      '<div class="uncbar"><div class="uncbar-fill" style="width:' + confPct + '%"></div></div>' +
+      '<div class="unctext" style="color:' + col + '">' + t("uncLabel", { pct }) + '</div>';
   });
 }
 
@@ -1752,6 +1810,7 @@ function renderScores() {
     document.getElementById("score" + i).textContent = team.score;
     document.getElementById("foul" + i).textContent = t("foulLabel", { n: team.fouls });
   });
+  renderUnconfirmed(); // ★v8: 得点が動くと未確認割合も変わるので更新
 }
 
 function renderPending() {
@@ -1949,6 +2008,17 @@ function renderBox() {
     let inner = '<div class="boxhead ' + accentClass(i) + '"><span style="color:' +
       (i === 0 ? "var(--home)" : "var(--away)") + '">' + esc(tm.name) +
       '</span><span style="color:var(--dim)">' + t("boxScoreHeader") + '</span></div>';
+    // ★v8: 得点者の確認状況(帯+数字)
+    const s = unconfirmedStats(i);
+    if (s.total > 0) {
+      const pct = Math.round(s.ratio * 100);
+      const col = unconfirmedColor(s.ratio);
+      const confPct = 100 - pct;
+      inner += '<div class="uncwrap" style="margin-bottom:6px">' +
+        '<div class="uncbar"><div class="uncbar-fill ' + accentClass(i) + 'fill" style="width:' + confPct + '%"></div></div>' +
+        '<div class="unctext" style="color:' + col + ';text-align:left">' +
+        t("uncLabel", { pct }) + ' (' + s.confirmed + '/' + s.total + ')</div></div>';
+    }
     const rows = boxScore(i);
     if (rows.length === 0) {
       inner += '<div style="font-size:12px;color:var(--dim)">' + t("boxNoRecord") + '</div>';
@@ -2126,13 +2196,20 @@ function renderLog() {
     const row = document.createElement("div");
     const ac = accentClass(e.team);
     const unresolved = e.type === "score" && e.pts == null;
-    const highlighted = e.id === pendingId || e.id === lastEditedId;
+    const isEditing = e.id === pendingId;     // 今パネルで開いている行
+    const justEdited = e.id === lastEditedId;  // 直前に番号などを直した行
+    const highlighted = isEditing || justEdited;
     row.className = "logrow";
     if (unresolved) row.style.background = "rgba(229,96,76,.08)";
     if (highlighted) {
-      row.style.outline = "2px solid " + (e.team === 0 ? "var(--home)" : "var(--away)");
-      row.style.outlineOffset = "-2px";
+      const col = e.team === 0 ? "var(--home)" : (e.team === 1 ? "var(--away)" : "var(--text)");
+      // ★v8: 直した行を見失わないよう、枠を太くし背景にもチームカラーを薄く敷く
+      row.style.outline = "3px solid " + col;
+      row.style.outlineOffset = "-3px";
       row.style.fontWeight = "800";
+      // 直したばかりの行(編集中でない)は、背景も薄く色付けしてさらに目立たせる
+      const tint = e.team === 0 ? "rgba(255,178,46,.16)" : (e.team === 1 ? "rgba(91,200,245,.16)" : "rgba(255,255,255,.10)");
+      row.style.background = tint;
     }
     const gc = fmtGameClock(e);
     const timeCell = gc
@@ -2239,13 +2316,13 @@ function applyLang() {
   // トグルボタン(設定・箱・節目)は開閉状態に依存するため、現状を見て更新
   const sp = document.getElementById("settingsPanel");
   const st = document.getElementById("settingsToggle");
-  if (sp && st) st.textContent = sp.classList.contains("hidden") ? t("settingsOpen") : t("settingsClose");
+  if (sp && st) { const o = !sp.classList.contains("hidden"); st.textContent = o ? t("settingsClose") : t("settingsOpen"); st.classList.toggle("open", o); }
   const bp = document.getElementById("boxPanel");
   const bt = document.getElementById("boxToggle");
-  if (bp && bt) bt.textContent = bp.classList.contains("hidden") ? t("boxOpen") : t("boxClose");
+  if (bp && bt) { const o = !bp.classList.contains("hidden"); bt.textContent = o ? t("boxClose") : t("boxOpen"); bt.classList.toggle("open", o); }
   const mp = document.getElementById("momentsPanel");
   const mto = document.getElementById("momentsToggle");
-  if (mp && mto) mto.textContent = mp.classList.contains("hidden") ? t("momentsOpen") : t("momentsClose");
+  if (mp && mto) { const o = !mp.classList.contains("hidden"); mto.textContent = o ? t("momentsClose") : t("momentsOpen"); mto.classList.toggle("open", o); }
   // renderAll は mode が初期化された後(langBtn押下時)のみ呼ぶ。
   // 起動時の applyLang() は静的テキストの適用だけ行い、renderAll は別途呼ばれる。
   if (typeof mode !== "undefined") {
@@ -2313,19 +2390,25 @@ document.getElementById("clipPlus").onclick = () => {
 document.getElementById("settingsToggle").onclick = function () {
   const p = document.getElementById("settingsPanel");
   p.classList.toggle("hidden");
-  this.textContent = p.classList.contains("hidden") ? t("settingsOpen") : t("settingsClose");
+  const open = !p.classList.contains("hidden");
+  this.textContent = open ? t("settingsClose") : t("settingsOpen");
+  this.classList.toggle("open", open);
 };
 document.getElementById("boxToggle").onclick = function () {
   const p = document.getElementById("boxPanel");
   p.classList.toggle("hidden");
-  this.textContent = p.classList.contains("hidden") ? t("boxOpen") : t("boxClose");
+  const open = !p.classList.contains("hidden");
+  this.textContent = open ? t("boxClose") : t("boxOpen");
+  this.classList.toggle("open", open);
   renderBox();
 };
 
 document.getElementById("momentsToggle").onclick = function () {
   const p = document.getElementById("momentsPanel");
   p.classList.toggle("hidden");
-  this.textContent = p.classList.contains("hidden") ? t("momentsOpen") : t("momentsClose");
+  const open = !p.classList.contains("hidden");
+  this.textContent = open ? t("momentsClose") : t("momentsOpen");
+  this.classList.toggle("open", open);
   renderMoments();
 };
 
