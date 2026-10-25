@@ -378,6 +378,38 @@
     background: var(--panel); color: var(--text);
   }
   #qPlayerBarChips .pbchip.skip { color: var(--dim); font-size: 13px; }
+  /* ★v9: 出場5人モード — コート上の選手チップは大きく、並び位置を固定して指で覚えられるようにする */
+  #qPlayerBarChips .pbchip.court { flex: 1; min-width: 64px; min-height: 64px; font-size: 26px; }
+  #qPlayerBarChips .pbchip.court.t0c { color: var(--home); border-color: rgba(255,178,46,.5); background: linear-gradient(rgba(255,178,46,.12),rgba(255,178,46,.12)), var(--panel); }
+  #qPlayerBarChips .pbchip.court.t1c { color: var(--away); border-color: rgba(91,200,245,.5); background: linear-gradient(rgba(91,200,245,.12),rgba(91,200,245,.12)), var(--panel); }
+  #qPlayerBarChips .pbchip.other { color: var(--text); font-size: 15px; }
+  .qsubbtn {
+    pointer-events: auto; border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--text); font-size: 12px; font-weight: 800; padding: 8px 14px; opacity: .9; white-space: nowrap;
+  }
+  .qsubbtn.hidden { display: none; }
+  /* ★v9: 交代パネル(両モード共通のオーバーレイ) */
+  #subOverlay {
+    position: fixed; inset: 0; z-index: 80; background: var(--bg);
+    display: flex; flex-direction: column; padding: 12px 14px 16px; overflow-y: auto;
+    -webkit-user-select: none; user-select: none;
+  }
+  #subOverlay.hidden { display: none; }
+  .subhead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .subtitle { font-size: 15px; font-weight: 900; flex: 1; }
+  .subhint { font-size: 13px; font-weight: 700; color: var(--dim); margin-bottom: 10px; min-height: 18px; }
+  .subsec { font-size: 12px; font-weight: 800; color: var(--dim); margin: 6px 0; }
+  .subchips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .subchips .chip { min-width: 64px; min-height: 56px; font-size: 22px; }
+  .subchips .chip.out { background: var(--danger); color: #fff; border-color: transparent; }
+  .subchips.bench .chip { opacity: .75; }
+  .subdone { min-height: 44px; min-width: 88px; font-size: 14px; }
+  .lineuprow { display: flex; gap: 6px; margin-top: 8px; }
+  .lineuptog { flex: 1; min-height: 40px; }
+  .lineuptog.on.t0 { border-color: var(--home); color: var(--home); background: rgba(255,178,46,.1); }
+  .lineuptog.on.t1 { border-color: var(--away); color: var(--away); background: rgba(91,200,245,.1); }
+  .chipsep { font-size: 11px; color: var(--dim); align-self: center; padding: 0 4px; }
+  .chip.bench { opacity: .55; }
 </style>
 </head>
 <body>
@@ -404,6 +436,7 @@
     <button class="qclockbtn" id="qClockBtn"></button>
     <button class="qundobtn" id="qUndoBtn"></button>
     <button class="qwakebtn" id="qWakeBtn"></button>
+    <button class="qsubbtn hidden" id="qSubBtn"></button>
   </div>
   <!-- ★v6: 選手番号待ちの帯(得点/ファウルの直後に出る。次のアクションまで残る) -->
   <div id="qPlayerBar" class="hidden">
@@ -411,6 +444,9 @@
     <div id="qPlayerBarChips"></div>
   </div>
 </div>
+
+<!-- ★v9: 交代パネル(かんたん/詳細の両モードから開く) -->
+<div id="subOverlay" class="hidden"></div>
 
 <div class="title">
   <div class="title-text">SCORE TRACKER</div>
@@ -429,6 +465,7 @@
 <div class="oprow">
   <button id="undoBtn" disabled style="flex:1"></button>
   <button id="livePostBtn" class="small" style="flex:1"></button>
+  <button id="subBtn" class="small" style="flex:1;display:none"></button>
 </div>
 
 <!-- ★v8: ひとこと投稿(出来事をその場で記録&X投稿。画面遷移なし) -->
@@ -459,6 +496,12 @@
   <input class="rinput" id="roster0" placeholder="未登録なら選手チップは出ません">
   <div class="rlabel t1" id="rlabel1"></div>
   <input class="rinput" id="roster1" placeholder="未登録なら選手チップは出ません">
+  <!-- ★v9: 出場5人モード(チームごとにオン/オフ) -->
+  <div class="lineuprow">
+    <button class="small lineuptog t0" id="lineupTog0" type="button"></button>
+    <button class="small lineuptog t1" id="lineupTog1" type="button"></button>
+  </div>
+  <div id="lineupNoteEl" class="clipnote"></div>
   <!-- ★v8: チーム情報のリセット(対戦カードが変わるとき用。スコアは「新しい試合」で消す) -->
   <div style="margin-top:10px;margin-bottom:10px;border-bottom:1px solid var(--line);padding-bottom:10px">
     <button class="small" id="teamResetBtn" style="width:100%;min-height:40px"></button>
@@ -638,6 +681,16 @@ const LANG = {
     quickWakeOff:"画面オフ防止: OFF",quickWakeOn:"画面オフ防止: ON",
     quickClockStart:"▶ 計時開始",quickClockRunning:"● C{n} {t}",
     quickPlayerWho:"{team}の{what} 誰?",quickPlayerLater:"あとで",
+    lineupTog:"{team}: 出場5人で絞る",lineupTogOn:"{team}: 出場5人 ON",
+    lineupNote:"ONのチームは、得点・ファウル直後の番号選択がコート上の選手だけになります。交代は「⇄ 交代」から記録します。",
+    subBtn:"⇄ 交代",subTitle:"⇄ {team} 交代",subDone:"完了",
+    subSecCourt:"コート ({n}/5)",subSecBench:"ベンチ",
+    subHintStarters:"スタメンをタップ(あと{n}人)",subHintPickOut:"下がる選手をタップ",
+    subHintPickIn:"#{out} と交代で入る選手をタップ",subHintFull:"先に下がる選手(コート)をタップしてください",
+    subRemove:"#{out} をコートから外す",subDone2:"交代: OUT #{out} → IN #{in}",
+    qOther:"他",qBack:"戻る",qSwapWho:"#{in} は誰と交代?",qSwapSkip:"記録しない",
+    eventSub:"交代 OUT#{out}→IN#{in}",eventSubShort:"交代",csvTypeSub:"交代",
+    pendSubLabel:"交代 OUT #{out} → IN #{in}",pendSubNote:"削除しても、今のコートの5人は変わりません(直すときは「⇄ 交代」で)。",
     quickWhatScore:"得点",quickWhatFoul:"ファウル",
     liveRecent:"直近: ",liveQuarterEnd:"【{q}終了】",liveMomentHeader:"【{label}】",
     liveGameEnd:"【試合終了】",
@@ -740,6 +793,16 @@ const LANG = {
     quickWakeOff:"Keep Awake: OFF",quickWakeOn:"Keep Awake: ON",
     quickClockStart:"▶ Start Timer",quickClockRunning:"● C{n} {t}",
     quickPlayerWho:"{team} {what} — who?",quickPlayerLater:"Later",
+    lineupTog:"{team}: filter to on-court 5",lineupTogOn:"{team}: on-court 5 ON",
+    lineupNote:"For teams set ON, the number picker after a score/foul shows only on-court players. Record subs with \"⇄ Sub\".",
+    subBtn:"⇄ Sub",subTitle:"⇄ {team} substitution",subDone:"Done",
+    subSecCourt:"On court ({n}/5)",subSecBench:"Bench",
+    subHintStarters:"Tap the starters ({n} more)",subHintPickOut:"Tap the player going out",
+    subHintPickIn:"Tap the player coming in for #{out}",subHintFull:"Tap the player going out (on court) first",
+    subRemove:"Remove #{out} from court",subDone2:"Sub: OUT #{out} → IN #{in}",
+    qOther:"Other",qBack:"Back",qSwapWho:"#{in} replaced who?",qSwapSkip:"Skip",
+    eventSub:"Sub OUT#{out}→IN#{in}",eventSubShort:"Sub",csvTypeSub:"sub",
+    pendSubLabel:"Sub OUT #{out} → IN #{in}",pendSubNote:"Deleting this does not change the current on-court 5 (use \"⇄ Sub\" to fix).",
     quickWhatScore:"score",quickWhatFoul:"foul",
     liveRecent:"Recent: ",liveQuarterEnd:"[End of {q}]",liveMomentHeader:"[{label}]",
     liveGameEnd:"[Final]",
@@ -789,6 +852,8 @@ let state = {
   round: "",            // ★v8: ラウンド/試合名(例: 5回戦)。大会名と同じ行に入れる
   hashtags: "",         // ★v7: ハッシュタグ(自由入力。投稿文の末尾に入れる)
   currentArchiveId: null, // ★v8: いまアーカイブのどの試合を編集中か(null=新規・未保存)
+  lineupOn: [false, false], // ★v9: 出場5人モードをチームごとにオン/オフ
+  onCourt: [[], []],        // ★v9: コート上の選手(背番号の配列。並び順=画面上の位置で固定)
 };
 let pendingId = null;     // 選手選択中のイベントID(保存しない一時状態)
 let changeTypeOpen = null; // ★v5: 「種別を変更」UIを開いている対象のイベントID
@@ -802,6 +867,10 @@ let gameEndConfirm = false; // ★v6: 試合終了ボタンの二段階確認
 let gameEndTimer = null;
 let gameEnded = false; // ★v6: 試合終了状態(ハイライトを終了ボタンに移す。記録は続けられる)
 let quickWaitEventId = null; // ★v6: かんたんモードの選手番号待ち対象のイベントID
+let subTeam = null;       // ★v9: 交代パネルを開いているチーム(null=閉じている)
+let subOutSel = null;     // ★v9: 交代パネルで「下がる選手」として選んだ番号
+let quickBenchOpen = false; // ★v9: 番号待ち帯で「他」(ベンチ)を開いているか
+let quickSwapFor = null;  // ★v9: ベンチから選んだ得点者 → 誰と交代したか聞いている番号
 let confirming = null;    // "stop" / "reset" / null
 let confirmTimer = null;
 
@@ -829,6 +898,8 @@ function load() {
         round: d.round ?? "",                    // ★v8
         hashtags: d.hashtags ?? "",              // ★v7
         currentArchiveId: d.currentArchiveId ?? null, // ★v8
+        lineupOn: d.lineupOn ?? [false, false],  // ★v9
+        onCourt: d.onCourt ?? [[], []],          // ★v9
       };
       // ★v6: 旧表記(Q1〜Q4)を新表記(1Q〜4Q)へ変換
       const qFix = { "Q1": "1Q", "Q2": "2Q", "Q3": "3Q", "Q4": "4Q" };
@@ -895,6 +966,156 @@ function rosterList(i) {
 function accentClass(i) { return i === 0 ? "t0" : (i === 1 ? "t1" : ""); }
 
 // ============================================================
+// ★v9: 出場5人モード
+//   コート上の選手を覚えておき、得点/ファウル直後の番号選択を5人に絞る。
+//   交代はイベント(type:"sub")としてログに残す(編集時のチャプター素材にもなる)。
+// ============================================================
+function lineupActive(i) {
+  return !!(state.lineupOn && state.lineupOn[i]) && rosterList(i).length > 0;
+}
+// 背番号欄から消えた番号は表示しない(入力途中で消えないよう、データ自体は削らない)
+function courtList(i) {
+  const r = rosterList(i);
+  return ((state.onCourt && state.onCourt[i]) || []).filter(n => r.includes(n));
+}
+function benchList(i) {
+  const c = courtList(i);
+  return rosterList(i).filter(n => !c.includes(n));
+}
+// 交代を記録する。入る選手は、下がる選手がいた位置にそのまま入る(他の4人の位置は動かない)
+//   olderThan: 記録漏れの交代を後から直すとき、その得点より「前」に差し込むための基準イベント
+function doSub(teamIdx, outNum, inNum, olderThan) {
+  const arr = state.onCourt[teamIdx];
+  const at = arr.indexOf(outNum);
+  if (at === -1) return;
+  arr[at] = inNum;
+  const e = makeEvent(teamIdx, "sub", 0, state.teams);
+  e.out = outNum; e.in = inNum;
+  const bi = olderThan ? state.events.findIndex(ev => ev.id === olderThan.id) : -1;
+  if (bi !== -1) {
+    // 時系列を正しく: 交代 → 得点 の順に並ぶよう、得点の1つ古い側へ入れる
+    e.q = olderThan.q; e.clip = olderThan.clip; e.elapsed = olderThan.elapsed; e.clock = olderThan.clock;
+    state.events.splice(bi + 1, 0, e);
+  } else {
+    state.events.unshift(e);
+  }
+  save();
+  showToast(t("subDone2", { out: outNum, in: inNum }));
+}
+// 取り消し用: 交代前の状態に戻す
+function revertSub(e) {
+  const arr = state.onCourt[e.team];
+  const at = arr.indexOf(e.in);
+  if (at !== -1 && !arr.includes(e.out)) arr[at] = e.out;
+}
+// スタメン設定(交代イベントは作らない)
+function addToCourt(teamIdx, num) {
+  const arr = state.onCourt[teamIdx];
+  if (arr.includes(num) || courtList(teamIdx).length >= 5) return;
+  arr.push(num);
+  save();
+}
+function removeFromCourt(teamIdx, num) {
+  state.onCourt[teamIdx] = state.onCourt[teamIdx].filter(n => n !== num);
+  save();
+}
+function openSubPanel(teamIdx) {
+  subTeam = teamIdx; subOutSel = null;
+  renderSubPanel();
+}
+function closeSubPanel() {
+  subTeam = null; subOutSel = null;
+  renderSubPanel();
+  if (mode === "quick") renderQuick(); else renderAll();
+}
+function firstLineupTeam() {
+  if (lineupActive(0)) return 0;
+  if (lineupActive(1)) return 1;
+  return null;
+}
+function renderSubPanel() {
+  const ov = document.getElementById("subOverlay");
+  if (subTeam === null || !lineupActive(subTeam)) { ov.classList.add("hidden"); ov.innerHTML = ""; return; }
+  const ti = subTeam;
+  const ac = accentClass(ti);
+  const court = courtList(ti), bench = benchList(ti);
+  let hint;
+  if (subOutSel) hint = t("subHintPickIn", { out: esc(subOutSel) });
+  else if (court.length < 5) hint = t("subHintStarters", { n: 5 - court.length });
+  else hint = t("subHintPickOut");
+  let h = '<div class="subhead"><div class="subtitle" style="color:' + (ti === 0 ? "var(--home)" : "var(--away)") + '">' +
+    t("subTitle", { team: esc(state.teams[ti].name) }) + '</div>';
+  // 両チームONのときだけチーム切り替えを出す
+  if (lineupActive(0) && lineupActive(1)) {
+    const other = ti === 0 ? 1 : 0;
+    h += '<button class="small" data-act="switch" style="min-height:44px">' + esc(state.teams[other].name) + '</button>';
+  }
+  h += '<button class="small subdone" data-act="done">' + t("subDone") + '</button></div>';
+  h += '<div class="subhint" id="subHintEl">' + hint + '</div>';
+  h += '<div class="subsec">' + t("subSecCourt", { n: court.length }) + '</div><div class="subchips">';
+  court.forEach(n => {
+    h += '<button class="chip ' + ac + 'chip' + (subOutSel === n ? " out" : "") + '" data-court="' + esc(n) + '">#' + esc(n) + '</button>';
+  });
+  h += '</div>';
+  if (subOutSel) {
+    h += '<div style="margin-bottom:10px"><button class="small warn" data-act="remove" style="min-height:40px">' +
+      t("subRemove", { out: esc(subOutSel) }) + '</button></div>';
+  }
+  h += '<div class="subsec">' + t("subSecBench") + '</div><div class="subchips bench">';
+  bench.forEach(n => {
+    h += '<button class="chip ' + ac + 'chip" data-bench="' + esc(n) + '">#' + esc(n) + '</button>';
+  });
+  h += '</div>';
+  ov.innerHTML = h;
+  ov.classList.remove("hidden");
+
+  ov.querySelectorAll("[data-court]").forEach(b => b.onclick = () => {
+    const n = b.dataset.court;
+    subOutSel = (subOutSel === n) ? null : n;
+    renderSubPanel();
+  });
+  ov.querySelectorAll("[data-bench]").forEach(b => b.onclick = () => {
+    const n = b.dataset.bench;
+    if (subOutSel) {
+      doSub(ti, subOutSel, n);
+      subOutSel = null;
+    } else if (courtList(ti).length < 5) {
+      addToCourt(ti, n);
+    } else {
+      const he = document.getElementById("subHintEl");
+      if (he) { he.textContent = t("subHintFull"); he.style.color = "var(--danger)"; }
+      return;
+    }
+    renderSubPanel();
+  });
+  const rm = ov.querySelector('[data-act="remove"]');
+  if (rm) rm.onclick = () => { removeFromCourt(ti, subOutSel); subOutSel = null; renderSubPanel(); };
+  const sw = ov.querySelector('[data-act="switch"]');
+  if (sw) sw.onclick = () => openSubPanel(ti === 0 ? 1 : 0);
+  ov.querySelector('[data-act="done"]').onclick = () => closeSubPanel();
+}
+// 交代ボタン(詳細モード・かんたんモード)の表示更新
+function renderSubButtons() {
+  const on = firstLineupTeam() !== null;
+  const b = document.getElementById("subBtn");
+  if (b) { b.style.display = on ? "" : "none"; b.textContent = t("subBtn"); }
+  const qb = document.getElementById("qSubBtn");
+  if (qb) { qb.classList.toggle("hidden", !on); qb.textContent = t("subBtn"); }
+}
+// 設定パネルのON/OFFボタン
+function renderLineupToggles() {
+  [0, 1].forEach(i => {
+    const b = document.getElementById("lineupTog" + i);
+    if (!b) return;
+    const on = !!(state.lineupOn && state.lineupOn[i]);
+    b.classList.toggle("on", on);
+    b.textContent = t(on ? "lineupTogOn" : "lineupTog", { team: state.teams[i].name });
+  });
+  const note = document.getElementById("lineupNoteEl");
+  if (note) note.textContent = t("lineupNote");
+}
+
+// ============================================================
 // ★v6: クリップボードへのコピー(編集用マーカー名・実況素材の出力口)
 //   将来AI連携を足すときも、ここで作る「素材文字列」を差し替えるだけで済む。
 // ============================================================
@@ -931,6 +1152,7 @@ function showToast(msg) {
 
 // ★v6: イベントの「何が起きたか」の部分(2P, 3P, foul など)。両方の出力で共通。
 function eventWhatText(e) {
+  if (e.type === "sub") return t("eventSub", { out: e.out, in: e.in }); // ★v9
   if (e.type === "foul") return t("eventFoulLabel");
   if (e.pts == null) return t("eventScore");
   return t("eventPts", { n: e.pts });
@@ -1292,6 +1514,8 @@ function buildFullMatchText(includeLog) {
         logLines.push("[" + e.q + "] " + tm + " " + who + " " + t("eventFoul"));
       } else if (e.type === "note") {
         logLines.push("[" + e.q + "] " + (e.note || ""));
+      } else if (e.type === "sub") { // ★v9
+        logLines.push("[" + e.q + "] " + tm + " " + t("eventSub", { out: e.out, in: e.in }));
       }
     }
     if (logLines.length) {
@@ -1577,9 +1801,14 @@ function undo() {
   if (state.events.length === 0) return;
   const last = state.events[0];
   const t = state.teams[last.team];
-  if (last.type === "score") {
+  if (last.type === "sub") {
+    revertSub(last); // ★v9: 交代の取り消しはコートの5人も元に戻す
+  } else if (last.type === "note") {
+    // ★v9修正: ひとことはスコア・ファウルに影響しないので、記録を消すだけ
+    //   (以前はファウル数を1減らしていた。チームなしのひとことではエラーになっていた)
+  } else if (last.type === "score") {
     if (last.pts != null) t.score -= last.pts; // 確定済みのみスコアを戻す
-  } else {
+  } else if (last.type === "foul") {
     t.fouls = Math.max(0, t.fouls - 1);
   }
   state.events.shift();
@@ -1624,6 +1853,7 @@ function handleResetButton() {
   state.quarterStarts = {}; // ★v7: 同期点はクリア(クォーター長は次の試合でも使うので維持)
   state.round = ""; // ★v8: ラウンドは試合ごとに変わるのでクリア(大会名・ハッシュタグは維持)
   state.currentArchiveId = null; // ★v8: 新しい試合なので「保存済み試合の編集中」状態を解除
+  state.onCourt = [[], []]; // ★v9: スタメンは試合ごとに違うのでクリア(ON/OFF設定は維持)
   const rEl = document.getElementById("roundInput");
   if (rEl) rEl.value = "";
   disarmConfirm();
@@ -1658,6 +1888,8 @@ function handleTeamResetButton() {
   state.teams[0].name = "HOME";
   state.teams[1].name = "AWAY";
   state.roster = ["", ""];
+  state.lineupOn = [false, false]; // ★v9
+  state.onCourt = [[], []];        // ★v9
   // 入力欄の表示も戻す
   document.getElementById("roster0").value = "";
   document.getElementById("roster1").value = "";
@@ -1680,9 +1912,9 @@ function exportCSV() {
     e.clock,
     e.q,
     e.teamName,
-    e.player ? "#" + e.player : "",
-    e.type === "score" ? t("csvTypeScore") : t("csvTypeFoul"),
-    e.type === "score" ? (e.pts == null ? t("csvUnconfirmed") : "+" + e.pts) : "",
+    e.type === "sub" ? "#" + e.in : (e.player ? "#" + e.player : ""), // ★v9: 交代は入った選手
+    e.type === "sub" ? t("csvTypeSub") : (e.type === "score" ? t("csvTypeScore") : t("csvTypeFoul")),
+    e.type === "sub" ? "OUT #" + e.out : (e.type === "score" ? (e.pts == null ? t("csvUnconfirmed") : "+" + e.pts) : ""),
     scoreLines[e.id],
   ].join(","));
   const blob = new Blob(["\uFEFF" + [header, ...rows].join("\n")],
@@ -1730,6 +1962,8 @@ function snapshotState() {
     tournament: state.tournament,
     round: state.round,
     hashtags: state.hashtags,
+    lineupOn: [...(state.lineupOn || [false, false])], // ★v9
+    onCourt: (state.onCourt || [[], []]).map(a => [...a]), // ★v9
   };
 }
 // 試合の自動命名(対戦カード + ラウンド)。空ならフォールバック。
@@ -1783,6 +2017,8 @@ function loadFromArchive(id) {
     round: d.round ?? "",
     hashtags: d.hashtags ?? "",
     currentArchiveId: id,
+    lineupOn: d.lineupOn ?? [false, false], // ★v9
+    onCourt: d.onCourt ?? [[], []],         // ★v9
   };
   const qFix = { "Q1": "1Q", "Q2": "2Q", "Q3": "3Q", "Q4": "4Q" };
   state.events.forEach(e => { if (qFix[e.q]) e.q = qFix[e.q]; });
@@ -1917,6 +2153,8 @@ function importBackup(file) {
         tournament: loaded.tournament ?? "",          // ★v7
         round: loaded.round ?? "",                     // ★v8
         hashtags: loaded.hashtags ?? "",              // ★v7
+        lineupOn: loaded.lineupOn ?? [false, false],  // ★v9
+        onCourt: loaded.onCourt ?? [[], []],          // ★v9
       };
       // ★v6: 旧表記(Q1〜Q4)を新表記(1Q〜4Q)へ変換して互換性を保つ
       const qFix = { "Q1": "1Q", "Q2": "2Q", "Q3": "3Q", "Q4": "4Q" };
@@ -2189,6 +2427,21 @@ function renderPending() {
   if (!e) { area.innerHTML = ""; return; }
   const ac = accentClass(e.team);
 
+  // ★v9: 交代の行をタップしたとき(削除と閉じるだけ)
+  if (e.type === "sub") {
+    const clipStr = e.clip ? "C" + e.clip + " " : "";
+    const delLabel = deleteConfirmId === e.id ? t("pendDeleteConfirm") : t("pendDelete");
+    const delCls = "small warn" + (deleteConfirmId === e.id ? " confirm" : "");
+    area.innerHTML = '<div class="pendbox ' + ac + '"><div class="pendlabel">⇄ ' + clipStr + fmtElapsed(e.elapsed) + " " +
+      esc(e.teamName) + " " + t("pendSubLabel", { out: esc(e.out), in: esc(e.in) }) + '</div>' +
+      '<div class="clipnote" style="margin-bottom:8px">' + t("pendSubNote") + '</div>' +
+      '<div style="display:flex;gap:6px"><button class="' + delCls + '" data-act="delete" style="min-height:44px">' + delLabel + '</button>' +
+      '<button class="small" data-act="close" style="min-height:44px">' + t("pendClose") + '</button></div></div>';
+    area.querySelector('[data-act="delete"]').onclick = () => handleDeleteClick(e.id);
+    area.querySelector('[data-act="close"]').onclick = () => { pendingId = null; deleteConfirmId = null; renderPending(); renderLog(); };
+    return;
+  }
+
   // ★v8: ひとこと(note)の修正パネル。本文表示 + 番号付与(任意) + 削除 + 閉じる。
   if (e.type === "note") {
     const clipStr = e.clip ? "C" + e.clip + " " : "";
@@ -2312,7 +2565,19 @@ function renderPending() {
     inner += '<div style="font-size:12px;color:var(--dim)">' + t("pendNoRoster", { team: esc(e.teamName) }) + '</div>';
   } else {
     inner += '<div class="chips">';
-    nums.forEach(n => {
+    // ★v9: 出場5人モードで直近の記録なら、コート上の選手を先頭に、ベンチは薄く後ろに並べる
+    const court = (!isPast && lineupActive(e.team)) ? courtList(e.team) : [];
+    if (court.length > 0) {
+      court.forEach(n => {
+        const sel = e.player === n ? " sel" : "";
+        inner += '<button class="chip ' + ac + 'chip' + sel + '" data-num="' + esc(n) + '" style="min-width:64px;min-height:52px;font-size:20px">#' + esc(n) + "</button>";
+      });
+      inner += '<span class="chipsep">' + t("subSecBench") + '</span>';
+      benchList(e.team).forEach(n => {
+        const sel = e.player === n ? " sel" : "";
+        inner += '<button class="chip bench ' + ac + 'chip' + sel + '" data-num="' + esc(n) + '">#' + esc(n) + "</button>";
+      });
+    } else nums.forEach(n => {
       const sel = e.player === n ? " sel" : "";
       inner += '<button class="chip ' + ac + 'chip' + sel + '" data-num="' + esc(n) + '">#' + esc(n) + "</button>";
     });
@@ -2628,10 +2893,13 @@ function renderLog() {
       ? '<span class="lgameclock">' + gc + '</span><span class="lsubtime">録' + fmtElapsed(e.elapsed) + '</span>'
       : '<span class="lgameclock dim">--:--</span><span class="lsubtime">録' + fmtElapsed(e.elapsed) + '</span>';
     const isNote = e.type === "note";
-    const ptsText = e.type === "score"
+    const isSub = e.type === "sub"; // ★v9
+    const ptsText = isSub ? "⇄" : (e.type === "score"
       ? (unresolved ? t("eventUnconfirmed") : "+" + e.pts)
-      : (isNote ? "💬" : t("eventFoul"));
-    const teamCell = isNote
+      : (isNote ? "💬" : t("eventFoul")));
+    const teamCell = isSub
+      ? '<span class="lteam ' + ac + '">' + esc(e.teamName) + " OUT#" + esc(e.out) + "→IN#" + esc(e.in) + "</span>"
+      : isNote
       ? '<span class="lteam ' + ac + '">' + (e.teamName ? esc(e.teamName) : "") + (e.player ? " #" + esc(e.player) : "") + " " + esc(e.note || "") + "</span>"
       : '<span class="lteam ' + ac + '">' + esc(e.teamName) + (e.player ? " #" + esc(e.player) : "") + "</span>";
     row.innerHTML =
@@ -2655,6 +2923,7 @@ function renderLog() {
 }
 
 function renderAll() {
+  renderSubButtons(); renderLineupToggles(); // ★v9
   renderClock(); renderQuarters(); renderScores(); renderPending();
   renderOps(); renderSettings(); renderBox(); renderLog(); renderLiveButton(); renderMoments();
 }
@@ -2803,6 +3072,17 @@ function openInX(text) {
   window.open(url, "_blank");
 }
 document.getElementById("resetBtn").onclick = handleResetButton;
+// ★v9: 交代ボタン・出場5人モードのON/OFF
+document.getElementById("subBtn").onclick = () => { const i = firstLineupTeam(); if (i !== null) openSubPanel(i); };
+document.getElementById("qSubBtn").onclick = (ev) => { ev.stopPropagation(); const i = firstLineupTeam(); if (i !== null) openSubPanel(i); };
+[0, 1].forEach(i => {
+  document.getElementById("lineupTog" + i).onclick = () => {
+    state.lineupOn[i] = !state.lineupOn[i];
+    save(); renderAll();
+    // ONにした直後でスタメン未設定なら、そのままスタメン選択を開く
+    if (state.lineupOn[i] && lineupActive(i) && courtList(i).length === 0) openSubPanel(i);
+  };
+});
 document.getElementById("teamResetBtn").onclick = handleTeamResetButton; // ★v8
 document.getElementById("clipMinus").onclick = () => {
   state.clipNo = Math.max(0, state.clipNo - 1); save(); renderSettings(); renderClock();
@@ -2967,6 +3247,7 @@ function renderQuick() {
     clockBtn.textContent = t("quickClockStart");
   }
   document.getElementById("qUndoBtn").style.visibility = state.events.length ? "visible" : "hidden";
+  renderSubButtons(); // ★v9
   renderQuickPlayerBar();
 }
 
@@ -2984,6 +3265,7 @@ function setQuickPlayerWait(e, teamIdx) {
   // ロスター未登録なら番号待ちは出さない(従来どおりワンタップ即記録)
   if (rosterList(teamIdx).length === 0) { quickWaitEventId = null; renderQuickPlayerBar(); return; }
   quickWaitEventId = e.id;
+  quickBenchOpen = false; quickSwapFor = null; // ★v9
   renderQuickPlayerBar();
 }
 function renderQuickPlayerBar() {
@@ -2996,25 +3278,49 @@ function renderQuickPlayerBar() {
     t("quickPlayerWho", { team: (e.team === 0 ? state.teams[0].name : state.teams[1].name), what });
   const chips = document.getElementById("qPlayerBarChips");
   chips.innerHTML = "";
-  rosterList(e.team).forEach(n => {
+  const addChip = (label, cls, fn) => {
     const b = document.createElement("button");
-    b.className = "pbchip" + (e.player === n ? " sel" : "");
-    b.textContent = "#" + n;
-    if (e.player === n) { b.style.background = e.team === 0 ? "var(--home)" : "var(--away)"; b.style.color = "var(--bg)"; }
-    b.onclick = (ev) => {
-      ev.stopPropagation();
-      e.player = n;
-      save();
-      renderQuickPlayerBar();
-      renderQuick();
-    };
+    b.className = "pbchip" + (cls ? " " + cls : "");
+    b.textContent = label;
+    b.onclick = (ev) => { ev.stopPropagation(); fn(b); };
     chips.appendChild(b);
-  });
-  const skip = document.createElement("button");
-  skip.className = "pbchip skip";
-  skip.textContent = t("quickPlayerLater");
-  skip.onclick = (ev) => { ev.stopPropagation(); quickWaitEventId = null; renderQuickPlayerBar(); };
-  chips.appendChild(skip);
+    return b;
+  };
+  const markSel = (b, n) => {
+    if (e.player === n) { b.style.background = e.team === 0 ? "var(--home)" : "var(--away)"; b.style.color = "var(--bg)"; }
+  };
+  const pick = (n) => { e.player = n; save(); renderQuickPlayerBar(); renderQuick(); };
+  const court = lineupActive(e.team) ? courtList(e.team) : [];
+  const tc = e.team === 0 ? "t0c" : "t1c";
+
+  if (court.length > 0 && quickSwapFor) {
+    // ★v9: ベンチの選手が得点 → 交代の記録漏れ。誰と代わったかを1タップで直す
+    document.getElementById("qPlayerBarLabel").textContent = t("qSwapWho", { in: quickSwapFor });
+    court.forEach(n => addChip("#" + n, "court " + tc, () => {
+      doSub(e.team, n, quickSwapFor, e);
+      quickSwapFor = null; quickBenchOpen = false;
+      renderQuickPlayerBar(); renderQuick();
+    }));
+    addChip(t("qSwapSkip"), "skip", () => { quickSwapFor = null; quickBenchOpen = false; renderQuickPlayerBar(); });
+  } else if (court.length > 0 && !quickBenchOpen) {
+    // ★v9: コート上の選手だけを大きく表示
+    court.forEach(n => markSel(addChip("#" + n, "court " + tc, () => pick(n)), n));
+    addChip(t("qOther"), "other", () => { quickBenchOpen = true; renderQuickPlayerBar(); });
+    addChip(t("quickPlayerLater"), "skip", () => { quickWaitEventId = null; renderQuickPlayerBar(); });
+  } else if (court.length > 0 && quickBenchOpen) {
+    // ★v9: ベンチ(交代の記録漏れ時の逃げ道)
+    benchList(e.team).forEach(n => markSel(addChip("#" + n, "", () => {
+      e.player = n; save();
+      if (courtList(e.team).length >= 5) quickSwapFor = n; // 誰と代わったか聞く
+      else { addToCourt(e.team, n); quickBenchOpen = false; }
+      renderQuickPlayerBar(); renderQuick();
+    }), n));
+    addChip(t("qBack"), "skip", () => { quickBenchOpen = false; renderQuickPlayerBar(); });
+  } else {
+    // 従来どおり全員表示(出場5人モードOFF、またはスタメン未設定)
+    rosterList(e.team).forEach(n => markSel(addChip("#" + n, (e.player === n ? "sel" : ""), () => pick(n)), n));
+    addChip(t("quickPlayerLater"), "skip", () => { quickWaitEventId = null; renderQuickPlayerBar(); });
+  }
   bar.classList.remove("hidden");
 }
 
