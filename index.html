@@ -410,6 +410,44 @@
   .lineuptog.on.t1 { border-color: var(--away); color: var(--away); background: rgba(91,200,245,.1); }
   .chipsep { font-size: 11px; color: var(--dim); align-self: center; padding: 0 4px; }
   .chip.bench { opacity: .55; }
+
+  /* ★v10: 投稿エディタ(Xに渡す前にアプリ内で文面を完成させる) */
+  #postOverlay {
+    position: fixed; inset: 0; z-index: 90; background: var(--bg);
+    display: flex; flex-direction: column; overflow-y: auto;
+    /* ホーム画面アプリ(standalone)でノッチ/ホームバーに潜らないように。
+       viewport-fit=cover がない現状では env() は0なので、従来と同じ余白になる。 */
+    padding: max(12px, env(safe-area-inset-top)) 14px max(16px, env(safe-area-inset-bottom));
+  }
+  #postOverlay.hidden { display: none; }
+  .pehead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .petitle { font-size: 15px; font-weight: 900; flex: 1; }
+  .pelabel { font-size: 11px; font-weight: 800; color: var(--dim); margin: 10px 0 4px; }
+  .petext {
+    width: 100%; min-height: 190px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px;
+    font-size: 15px; line-height: 1.6; font-family: inherit; resize: vertical;
+  }
+  .pecount { font-size: 12px; font-weight: 800; color: var(--dim); text-align: right; margin-top: 4px; }
+  .pecount.over { color: var(--danger); }
+  .perow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .perow .small { min-height: 38px; }
+  .pefield {
+    width: 100%; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;
+    font-size: 14px; font-family: inherit;
+  }
+  .pefield.sel { -webkit-appearance: none; appearance: none; }
+  .pebtns { display: flex; gap: 8px; margin-top: 14px; }
+  .pebtns .small { flex: 1; min-height: 50px; font-size: 14px; }
+  .pebtns .small.go { background: var(--home); color: #1A1205; border-color: transparent; font-weight: 900; }
+  .penote { font-size: 11px; color: var(--dim); margin-top: 10px; line-height: 1.5; }
+  .pedraft {
+    display: flex; align-items: center; gap: 8px; margin-top: 8px;
+    border: 1px solid rgba(255,178,46,.4); background: rgba(255,178,46,.08);
+    border-radius: 10px; padding: 8px 10px; font-size: 12px; font-weight: 700; color: var(--home);
+  }
+  .pedraft .small { min-height: 34px; }
 </style>
 </head>
 <body>
@@ -447,6 +485,8 @@
 
 <!-- ★v9: 交代パネル(かんたん/詳細の両モードから開く) -->
 <div id="subOverlay" class="hidden"></div>
+<!-- ★v10: 投稿エディタ(中身は openPostEditor で組み立てる) -->
+<div id="postOverlay" class="hidden"></div>
 
 <div class="title">
   <div class="title-text">SCORE TRACKER</div>
@@ -516,6 +556,8 @@
   <!-- ★v7: 大会名・ハッシュタグ(X投稿に使う) -->
   <div style="margin-bottom:10px">
     <div id="postSettingsLabelEl" style="font-size:12px;color:var(--dim);font-weight:800;margin-bottom:6px">X投稿用</div>
+    <!-- ★v10: 登録済みの大会名から選ぶ(手打ちしないので予測変換の誤入力を防げる) -->
+    <select class="rinput" id="tourPresetSel"></select>
     <input class="rinput" id="tournamentInput" placeholder="大会名(例: 令和7年度新人戦 第4支部大会)">
     <input class="rinput" id="roundInput" placeholder="ラウンド・試合(例: 5回戦)">
     <input class="rinput" id="hashtagsInput" placeholder="ハッシュタグ(例: #新人戦 #中大杉並)">
@@ -674,8 +716,19 @@ const LANG = {
     fullNoteForAI:"AIへの注意",
     fullUnknownAmount:"得点者を確認できなかった分",
     fullAiInstruction:"個人得点は確認できた分のみの最低値です。実際はこれより多い可能性があるため、個人の数字を断定せず「確認できた範囲で」という前提でまとめてください。",
-    momentQEnd:"{q}終了",momentTie:"同点!",momentLeadChange:"{name}が逆転!",momentGameClockRemain:"残",
+    momentQEnd:"{q}終了",momentGameEnd:"試合終了",momentTie:"同点!",momentLeadChange:"{name}が逆転!",momentGameClockRemain:"残",
     momentGapWiden:"{name}が{n}点差に突き放す",momentGapClose:"{name}が{n}点差に追い上げ",
+    // ★v10: 投稿エディタ
+    peTitle:"投稿をつくる",peClose:"✕ 閉じる",peBodyLabel:"投稿する文面(ここで仕上げてから𝕏へ)",
+    peCount:"{n} / 280",peCountOver:"{n} / 280 (超過 {over})",
+    peTourLabel:"大会名(登録済みから選ぶ)",peTourPick:"— 登録済みの大会名 —",peTourAdd:"＋ 今の大会名を登録",
+    peRoundLabel:"ラウンド",peTagsLabel:"ハッシュタグ",peRebuild:"⟳ 文面を作り直す",
+    peGo:"𝕏 で投稿",peCopy:"コピー",peSaveDraft:"下書き保存",
+    peDraftFound:"下書きがあります({time})",peDraftRestore:"復元",peDraftDiscard:"破棄",
+    peNote:"下書きはこのアプリの中に保存されます。𝕏側に残しません。大会名・ラウンドを変えたら「文面を作り直す」を押してください(手で直した部分は消えます)。",
+    toastDraftSaved:"下書きを保存しました",toastDraftRestored:"下書きを復元しました",
+    toastDraftDiscarded:"下書きを破棄しました",toastTourAdded:"大会名を登録しました",
+    toastTourExists:"もう登録されています",toastTourEmpty:"大会名が空です",toastPostEmpty:"文面が空です",
     quickScoreLabel:"未確定の記録",quickCountLabel:"確定スコア {score} ・ ファウル {fouls}",
     quickHint:"タップ=得点 ・ 長押し=ファウル",quickUndoBtn:"↩ 直前を取り消す",
     quickWakeOff:"画面オフ防止: OFF",quickWakeOn:"画面オフ防止: ON",
@@ -786,8 +839,19 @@ const LANG = {
     fullNoteForAI:"Note for AI",
     fullUnknownAmount:"Points with unconfirmed scorer",
     fullAiInstruction:"Individual point totals are minimums (confirmed only). Actual totals may be higher, so please avoid stating individual numbers as definitive and frame them as 'as far as could be confirmed'.",
-    momentQEnd:"End of {q}",momentTie:"Tied!",momentLeadChange:"{name} takes the lead!",momentGameClockRemain:"",
+    momentQEnd:"End of {q}",momentGameEnd:"Final",momentTie:"Tied!",momentLeadChange:"{name} takes the lead!",momentGameClockRemain:"",
     momentGapWiden:"{name} pulls ahead by {n}",momentGapClose:"{name} closes to within {n}",
+    // ★v10: post editor
+    peTitle:"Compose post",peClose:"✕ Close",peBodyLabel:"Post text (finish it here, then go to 𝕏)",
+    peCount:"{n} / 280",peCountOver:"{n} / 280 (over by {over})",
+    peTourLabel:"Tournament (pick a saved one)",peTourPick:"— saved tournaments —",peTourAdd:"＋ Save current name",
+    peRoundLabel:"Round",peTagsLabel:"Hashtags",peRebuild:"⟳ Rebuild text",
+    peGo:"Post on 𝕏",peCopy:"Copy",peSaveDraft:"Save draft",
+    peDraftFound:"Draft saved at {time}",peDraftRestore:"Restore",peDraftDiscard:"Discard",
+    peNote:"Drafts stay inside this app, not in 𝕏. After changing the tournament or round, tap Rebuild text (manual edits will be lost).",
+    toastDraftSaved:"Draft saved",toastDraftRestored:"Draft restored",
+    toastDraftDiscarded:"Draft discarded",toastTourAdded:"Tournament saved",
+    toastTourExists:"Already saved",toastTourEmpty:"Tournament name is empty",toastPostEmpty:"Nothing to post",
     quickScoreLabel:"Unconfirmed",quickCountLabel:"Score {score} · Fouls {fouls}",
     quickHint:"Tap=Score · Hold=Foul",quickUndoBtn:"↩ Undo",
     quickWakeOff:"Keep Awake: OFF",quickWakeOn:"Keep Awake: ON",
@@ -1198,6 +1262,14 @@ function buildLiveText() {
 function detectMoment() {
   if (state.events.length === 0) return null;
 
+  // ★v10: 試合終了の検知(最優先)
+  //   クォーター終了は「次のピリオドに進んだこと」で検知するため、最終ピリオド(OT)で
+  //   試合が終わると次がなく、節目が出なかった。終了ボタンの状態を直接節目として扱う。
+  //   gameEnded は新しい記録を入れると false に戻るので、記録を続ければ自動で解除される。
+  if (gameEnded) {
+    return { kind: "game_end", label: t("momentGameEnd") };
+  }
+
   // --- クォーター終了の検知 ---
   const latest = state.events[0];
   const latestQIdx = QUARTERS.indexOf(latest.q);
@@ -1307,6 +1379,10 @@ function buildGameEndText() {
 // 節目を含んだ実況素材テキストを作る
 function buildMomentText(moment) {
   if (!moment) return buildLiveText();
+  // ★v10: 試合終了のときは、最終スコア+全体の得点者ランキング(見出しは buildGameEndText が持つ)
+  if (moment.kind === "game_end") {
+    return buildGameEndText();
+  }
   // ★v6: クォーター終了のときは、そのクォーターの振り返りを出す
   if (moment.kind === "quarter_end") {
     return "【" + moment.label + "】\n" + buildQuarterSummary(moment.endedQ);
@@ -1573,6 +1649,218 @@ function decorateForPost(body) {
   if (tagLine) out += "\n\n" + tagLine; // ★v8: 本文との間に空行
   return out;
 }
+// ============================================================
+// ★v10: 投稿エディタ
+//   Xに渡す前にアプリ内で文面を完成させる。Xの中で編集して時間切れ→下書きに残る、
+//   という事故を防ぐのが目的。下書きもこのアプリ側に持つ。
+// ============================================================
+const POST_DRAFT_KEY = "bball_postdraft_v1";
+const TOUR_PRESET_KEY = "bball_tourpresets_v1";
+const ROUND_PRESETS = ["1回戦", "2回戦", "3回戦", "4回戦", "5回戦", "準々決勝", "準決勝", "決勝", "順位決定戦"];
+let peCore = "";          // 装飾(大会名・カード・タグ)を外した本文。作り直しの元になる
+let peDraftPending = null; // 開いたときに見つかった下書き
+
+// Xの数え方に合わせた文字数。日本語などは1字=2、半角は1、URLは23固定(twitter-text準拠)
+function xWeightedLength(text) {
+  const s = String(text || "");
+  const urls = s.match(/https?:\/\/\S+/g) || [];
+  const rest = s.replace(/https?:\/\/\S+/g, "");
+  let w = 0;
+  for (const ch of rest) {
+    const c = ch.codePointAt(0);
+    if ((c <= 4351) || (c >= 8192 && c <= 8205) || (c >= 8208 && c <= 8223) || (c >= 8242 && c <= 8247)) w += 1;
+    else w += 2;
+  }
+  return w + urls.length * 23;
+}
+
+function loadPostDraft() {
+  try { const raw = localStorage.getItem(POST_DRAFT_KEY); return raw ? JSON.parse(raw) : null; }
+  catch (e) { return null; }
+}
+function savePostDraft(d) {
+  try { localStorage.setItem(POST_DRAFT_KEY, JSON.stringify(d)); } catch (e) { console.error(e); }
+}
+function clearPostDraft() {
+  try { localStorage.removeItem(POST_DRAFT_KEY); } catch (e) {}
+}
+function loadTourPresets() {
+  try { const raw = localStorage.getItem(TOUR_PRESET_KEY); const a = raw ? JSON.parse(raw) : []; return Array.isArray(a) ? a : []; }
+  catch (e) { return []; }
+}
+function saveTourPresets(arr) {
+  try { localStorage.setItem(TOUR_PRESET_KEY, JSON.stringify(arr.slice(0, 20))); } catch (e) {}
+  renderTourPresetSel(); // 設定パネル側のプルダウンも合わせて更新する
+}
+// 大会名を一覧に登録(新しいものを先頭へ。重複は入れない)
+function addTourPreset(name) {
+  const n = (name || "").trim();
+  if (!n) return "empty";
+  const arr = loadTourPresets();
+  if (arr.includes(n)) return "exists";
+  arr.unshift(n);
+  saveTourPresets(arr);
+  return "added";
+}
+function removeTourPreset(name) {
+  saveTourPresets(loadTourPresets().filter(x => x !== name));
+}
+
+function openPostEditor(core) {
+  const body = (core || "").trim();
+  if (!body) { showToast(t("toastPostEmpty")); return; }
+  peCore = body;
+  peDraftPending = loadPostDraft();
+  renderPostEditor(decorateForPost(body));
+}
+function closePostEditor() {
+  const ov = document.getElementById("postOverlay");
+  ov.classList.add("hidden");
+  ov.innerHTML = "";
+  peDraftPending = null;
+}
+function peTextEl() { return document.getElementById("peText"); }
+function updatePostCount() {
+  const ta = peTextEl(); if (!ta) return;
+  const el = document.getElementById("peCount");
+  const n = xWeightedLength(ta.value);
+  const over = n - 280;
+  el.textContent = over > 0 ? t("peCountOver", { n, over }) : t("peCount", { n });
+  el.classList.toggle("over", over > 0);
+}
+
+function renderPostEditor(text) {
+  const ov = document.getElementById("postOverlay");
+  const presets = loadTourPresets();
+  const cur = (state.tournament || "").trim();
+
+  let h = '<div class="pehead"><div class="petitle">' + t("peTitle") + '</div>' +
+    '<button class="small" id="peCloseBtn" style="min-height:40px">' + t("peClose") + '</button></div>';
+
+  if (peDraftPending && peDraftPending.text) {
+    const d = new Date(peDraftPending.ts || Date.now());
+    const hhmm = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    h += '<div class="pedraft"><span style="flex:1">' + t("peDraftFound", { time: hhmm }) + '</span>' +
+      '<button class="small" id="peRestoreBtn">' + t("peDraftRestore") + '</button>' +
+      '<button class="small warn" id="peDiscardBtn">' + t("peDraftDiscard") + '</button></div>';
+  }
+
+  h += '<div class="pelabel">' + t("peBodyLabel") + '</div>';
+  h += '<textarea class="petext" id="peText"></textarea>';
+  h += '<div class="pecount" id="peCount"></div>';
+
+  // 大会名(登録済みから選ぶ。手打ちしないので予測変換に引っかからない)
+  h += '<div class="pelabel">' + t("peTourLabel") + '</div>';
+  h += '<select class="pefield sel" id="peTourSel"><option value="">' + t("peTourPick") + '</option>';
+  presets.forEach(p => {
+    h += '<option value="' + esc(p) + '"' + (p === cur ? " selected" : "") + '>' + esc(p) + '</option>';
+  });
+  h += '</select>';
+  h += '<div class="perow"><button class="small" id="peTourAddBtn">' + t("peTourAdd") + '</button>';
+  if (cur && presets.includes(cur)) {
+    h += '<button class="small warn" id="peTourDelBtn">✕ ' + esc(cur) + '</button>';
+  }
+  h += '</div>';
+
+  // ラウンド(ボタン選択)
+  h += '<div class="pelabel">' + t("peRoundLabel") + '</div><div class="perow" id="peRoundRow">';
+  ROUND_PRESETS.forEach(r => {
+    const on = (state.round || "").trim() === r;
+    h += '<button class="small' + (on ? " confirm" : "") + '" data-round="' + esc(r) + '">' + esc(r) + '</button>';
+  });
+  h += '</div>';
+
+  // ハッシュタグ
+  h += '<div class="pelabel">' + t("peTagsLabel") + '</div>';
+  h += '<input class="pefield" id="peTags" type="text" value="' + esc(state.hashtags || "") + '">';
+
+  h += '<div class="perow"><button class="small" id="peRebuildBtn">' + t("peRebuild") + '</button></div>';
+
+  h += '<div class="pebtns">' +
+    '<button class="small go" id="peGoBtn">' + t("peGo") + '</button>' +
+    '<button class="small" id="peCopyBtn">' + t("peCopy") + '</button>' +
+    '<button class="small" id="peDraftBtn">' + t("peSaveDraft") + '</button></div>';
+  h += '<div class="penote">' + t("peNote") + '</div>';
+
+  ov.innerHTML = h;
+  ov.classList.remove("hidden");
+  ov.scrollTop = 0;
+
+  // textarea は value で入れる(HTMLエスケープの事故を避ける)。iPhoneでキーボードが
+  // 文面を隠さないよう、自動フォーカスはしない。
+  const ta = peTextEl();
+  ta.value = text;
+  ta.oninput = updatePostCount;
+  updatePostCount();
+
+  document.getElementById("peCloseBtn").onclick = closePostEditor;
+
+  if (peDraftPending && peDraftPending.text) {
+    document.getElementById("peRestoreBtn").onclick = () => {
+      peCore = peDraftPending.core || peCore;
+      ta.value = peDraftPending.text;
+      peDraftPending = null;
+      const b = document.querySelector("#postOverlay .pedraft"); if (b) b.remove();
+      updatePostCount();
+      showToast(t("toastDraftRestored"));
+    };
+    document.getElementById("peDiscardBtn").onclick = () => {
+      clearPostDraft();
+      peDraftPending = null;
+      const b = document.querySelector("#postOverlay .pedraft"); if (b) b.remove();
+      showToast(t("toastDraftDiscarded"));
+    };
+  }
+
+  // 大会名を選ぶ → stateに反映(文面は「作り直す」を押したときだけ入れ替える)
+  document.getElementById("peTourSel").onchange = (e) => {
+    if (!e.target.value) return;
+    state.tournament = e.target.value;
+    save(); syncSettingsInputs();
+    renderPostEditor(ta.value); // 削除ボタンの出し入れがあるので描き直す(文面は保持)
+  };
+  document.getElementById("peTourAddBtn").onclick = () => {
+    const r = addTourPreset(state.tournament);
+    if (r === "empty") { showToast(t("toastTourEmpty")); return; }
+    if (r === "exists") { showToast(t("toastTourExists")); return; }
+    showToast(t("toastTourAdded"));
+    renderPostEditor(ta.value);
+  };
+  const delBtn = document.getElementById("peTourDelBtn");
+  if (delBtn) delBtn.onclick = () => { removeTourPreset(cur); renderPostEditor(ta.value); };
+
+  document.getElementById("peRoundRow").querySelectorAll("button").forEach(b => {
+    b.onclick = () => {
+      const r = b.dataset.round;
+      state.round = ((state.round || "").trim() === r) ? "" : r; // 同じものを押したら解除
+      save(); syncSettingsInputs();
+      renderPostEditor(ta.value);
+    };
+  });
+
+  const tagsEl = document.getElementById("peTags");
+  tagsEl.oninput = () => { state.hashtags = tagsEl.value; save(); syncSettingsInputs(); };
+
+  document.getElementById("peRebuildBtn").onclick = () => {
+    peTextEl().value = decorateForPost(peCore);
+    updatePostCount();
+  };
+  document.getElementById("peCopyBtn").onclick = () => copyText(peTextEl().value);
+  document.getElementById("peDraftBtn").onclick = () => {
+    savePostDraft({ core: peCore, text: peTextEl().value, ts: Date.now() });
+    showToast(t("toastDraftSaved"));
+    closePostEditor();
+  };
+  document.getElementById("peGoBtn").onclick = () => {
+    const out = (peTextEl().value || "").trim();
+    if (!out) { showToast(t("toastPostEmpty")); return; }
+    addTourPreset(state.tournament); // 投稿した大会名は自動で一覧に残す
+    clearPostDraft();
+    openInX(out);                    // ユーザー操作の直下で開く(ポップアップブロック回避)
+    closePostEditor();
+  };
+}
+
 const CONFIRM_COOLDOWN = 350; // ms。この時間内の2回目クリックはダブルタップとみなして無視
 
 function armConfirm(kind) {
@@ -2048,6 +2336,16 @@ function syncSettingsInputs() {
   Object.entries(map).forEach(([id, key]) => {
     const el = document.getElementById(id); if (el) el.value = state[key] || "";
   });
+  renderTourPresetSel(); // ★v10
+}
+// ★v10: 設定パネルの「登録済みの大会名」プルダウンを描く
+function renderTourPresetSel() {
+  const sel = document.getElementById("tourPresetSel");
+  if (!sel) return;
+  const cur = (state.tournament || "").trim();
+  const presets = loadTourPresets();
+  sel.innerHTML = '<option value="">' + t("peTourPick") + "</option>" +
+    presets.map(p => '<option value="' + esc(p) + '"' + (p === cur ? " selected" : "") + ">" + esc(p) + "</option>").join("");
 }
 
 // ★v8: 保存した試合の一覧と保存状態を描画
@@ -2297,7 +2595,7 @@ function renderQuarters() {
       if (state.events.length === 0) { showToast(t("toastNoRecord")); return; }
       gameEnded = true; // ★v6: 終了状態に移行(ハイライトが終了ボタンに移る)
       copyText(decorateForPost(buildGameEndText()));
-      renderQuarters();
+      renderAll(); // ★v10: 𝕏投稿ボタンを「投稿どき: 試合終了」に光らせるため全体を更新
     }
   };
   w.appendChild(endBtn);
@@ -2694,7 +2992,7 @@ function renderBox() {
     postB.className = "small";
     postB.style.cssText = "flex:1;min-height:40px";
     postB.textContent = t("boxPostBtn");
-    postB.onclick = () => openInX(decorateForPost(buildBoxScoreText()));
+    postB.onclick = () => openPostEditor(buildBoxScoreText()); // ★v10: エディタ経由
     btnRow.appendChild(copyB);
     btnRow.appendChild(postB);
     panel.appendChild(btnRow);
@@ -2743,7 +3041,7 @@ function renderMoments() {
     copyB.onclick = () => copyText(decorateForPost(momentToText(m)));
     const xB = document.createElement("button");
     xB.className = "small"; xB.textContent = t("momentX");
-    xB.onclick = () => openInX(decorateForPost(momentToText(m)));
+    xB.onclick = () => openPostEditor(momentToText(m)); // ★v10: エディタ経由
     btns.appendChild(copyB); btns.appendChild(xB);
     row.appendChild(btns);
     panel.appendChild(row);
@@ -2782,7 +3080,7 @@ function setupNoteRow() {
     const text = buildNoteText();
     // 記録に残す + X投稿画面を開く(大会名・対戦カード・ハッシュタグは decorateForPost で付与)
     addNote(noteTeam, text);
-    openInX(decorateForPost(text));
+    openPostEditor(text); // ★v10: エディタ経由
     // 入力をクリア(チーム選択も解除)
     input.value = "";
     sel.value = "";
@@ -3042,6 +3340,16 @@ renderAll();
   const rEl = document.getElementById("roundInput");
   const hEl = document.getElementById("hashtagsInput");
   if (tEl) { tEl.value = state.tournament || ""; tEl.oninput = () => { state.tournament = tEl.value; save(); }; }
+  // ★v10: 登録済みの大会名を選んだら入力欄とstateに入れる
+  const tpSel = document.getElementById("tourPresetSel");
+  if (tpSel) {
+    renderTourPresetSel();
+    tpSel.onchange = () => {
+      if (!tpSel.value) return;
+      state.tournament = tpSel.value;
+      save(); syncSettingsInputs();
+    };
+  }
   if (rEl) { rEl.value = state.round || ""; rEl.oninput = () => { state.round = rEl.value; save(); }; }
   if (hEl) { hEl.value = state.hashtags || ""; hEl.oninput = () => { state.hashtags = hEl.value; save(); }; }
 })();
@@ -3064,10 +3372,11 @@ document.getElementById("csvBtn").onclick = exportCSV;
 document.getElementById("livePostBtn").onclick = () => {
   if (state.events.length === 0) { showToast(t("toastNoRecord")); return; }
   const moment = detectMoment();
-  openInX(decorateForPost(buildMomentText(moment)));
+  openPostEditor(buildMomentText(moment)); // ★v10: Xに渡す前にアプリ内で仕上げる
 };
 function openInX(text) {
-  const url = "https://twitter.com/intent/tweet?text=" + encodeURIComponent(text);
+  // ★v10: 現行エンドポイント(旧 twitter.com/intent/tweet はリダイレクト経由になる)
+  const url = "https://x.com/intent/post?text=" + encodeURIComponent(text);
   // 別タブ/アプリで開く。ポップアップブロックを避けるため、ユーザー操作直下で呼ぶ。
   window.open(url, "_blank");
 }
